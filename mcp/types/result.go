@@ -2,6 +2,7 @@ package types
 
 import (
 	"encoding/json"
+	"fmt"
 )
 
 const (
@@ -37,7 +38,6 @@ const (
 	READ_RESOURCE_RESULT_RESULT_INTERFACE_TYPE
 	CALL_TOOL_RESULT_RESULT_INTERFACE_TYPE
 	LIST_TOOLS_RESULT_RESULT_INTERFACE_TYPE
-	JSONRPC_RESPONSE_RESULT_INTERFACE_TYPE
 )
 
 //A response that indicates success but carries no data.
@@ -74,10 +74,30 @@ func (re *Result) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
-	re.Metadata = raw["_meta"].(map[string]interface{})
+	if _, ok := raw["_meta"]; !ok {
+		return nil //No _meta field, nothing to unmarshal
+	}
+	bm, err := json.Marshal(raw["_meta"])
+	if err != nil {
+		return fmt.Errorf("error marshaling _meta: %v", err)
+	}
+	if err := json.Unmarshal(bm, &re.Metadata); err != nil {
+		return fmt.Errorf("error unmarshaling into metadata: %v", err)
+	}
 	delete(raw, "_meta")
 	re.AdditionalProperties = raw
 	return nil
+}
+
+type ServerCapabilitiesListChanged struct {
+	ListChanged bool `json:"listChanged,omitempty"`
+}
+
+type ServerCapabilitiesResources struct {
+	//Whether this server supports subscribing to resource updates.
+	Subscribe bool `json:"subscribe,omitempty"`
+	//Whether this server supports notifications for changes to the resource list.
+	ServerCapabilitiesListChanged
 }
 
 //Capabilities that a server may support. Known capabilities are defined here, in this schema, but this is not a closed set: any server can define its own, additional capabilities.
@@ -88,23 +108,16 @@ type ServerCapabilities struct {
 	Logging interface{} `json:"logging,omitempty"`
 	//Present if the server supports argument autocompletion suggestions.
 	Completions interface{} `json:"completions,omitempty"`
+	//Present if the server supports sampling from an LLM.
+	Sampling interface{} `json:"sampling,omitempty"`
 	//Present if the server offers any prompt templates.
-	Prompts *struct {
-		//Whether this server supports notifications for changes to the prompt list.
-		ListChanged bool `json:"listChanged,omitempty"`
-	} `json:"prompts,omitempty"`
+	//Whether this server supports notifications for changes to the prompt list.
+	Prompts *ServerCapabilitiesListChanged `json:"prompts,omitempty"`
 	//Present if the server offers any resources to read.
-	Resources *struct {
-		//Whether this server supports subscribing to resource updates.
-		Subscribe bool `json:"subscribe,omitempty"`
-		//Whether this server supports notifications for changes to the resource list.
-		ListChanged bool `json:"listChanged,omitempty"`
-	} `json:"resources,omitempty"`
+	Resources *ServerCapabilitiesResources `json:"resources,omitempty"`
 	//Present if the server offers any tools to call.
-	Tools *struct {
-		//Whether this server supports notifications for changes to the tool list.
-		ListChanged bool `json:"listChanged,omitempty"`
-	} `json:"tools,omitempty"`
+	//Whether this server supports notifications for changes to the tool list.
+	Tools *ServerCapabilitiesListChanged `json:"tools,omitempty"`
 }
 
 //After receiving an initialize request from the client, the server sends this response.

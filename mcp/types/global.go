@@ -1,8 +1,15 @@
 package types
 
 const (
-	LATEST_PROTOCOL_VERSION = "2025-03-26"
+	LATEST_PROTOCOL_VERSION             = "2025-03-26"
+	DEFAULT_NEGOTIATED_PROTOCOL_VERSION = "2025-03-26"
 )
+
+var SUPPORTED_PROTOCOL_VERSIONS = map[string]struct{}{
+	LATEST_PROTOCOL_VERSION: struct{}{},
+	"2024-11-05":            struct{}{},
+	"2024-10-07":            struct{}{},
+}
 
 //A progress token, used to associate progress notifications with the original request, string/number.
 type ProgressToken interface{}
@@ -17,6 +24,19 @@ type Role string
 
 //Describes the name and version of an MCP implementation.
 type Implementation struct {
-	Name    string `json:"name"`
+	BaseMetadata
 	Version string `json:"version"`
+}
+
+//Base metadata interface for common properties across resources, tools, prompts, and implementations.
+type BaseMetadata struct {
+	// Intended for programmatic or logical use, but used as a display name in past specs or fallback
+	Name string `json:"name"`
+	//Intended for UI and end-user contexts — optimized to be human-readable and easily understood,
+	//even by those unfamiliar with domain-specific terminology.
+	//
+	//If not provided, the name should be used for display (except for Tool,
+	//where `annotations.title` should be given precedence over using `name`,
+	//if present).
+	Title string `json:"title"`
 }

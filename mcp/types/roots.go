@@ -1,5 +1,7 @@
 package types
 
+import "github.com/victorvbello/gomcp/mcp/methods"
+
 //Represents a root directory or file that the server can operate on.
 type Root struct {
 	//The URI identifying the root. This *must* start with file://for now.
@@ -25,7 +27,18 @@ type ListRootsRequest struct {
 	Request
 }
 
+func NewListRootsRequest(params *BaseRequestParams) *ListRootsRequest {
+	lrr := new(ListRootsRequest)
+	lrr.Method = methods.METHOD_LIST_ROOTS
+	lrr.Params = params
+	return lrr
+}
+
 func (lrr *ListRootsRequest) TypeOfServerRequest() int { return LIST_ROOTS_REQUEST_SERVER_REQUEST_TYPE }
+func (lrr *ListRootsRequest) TypeOfRequestInterface() int {
+	return LIST_ROOTS_REQUEST_REQUEST_INTERFACE_TYPE
+}
+func (lrr *ListRootsRequest) GetRequest() Request { return lrr.Request }
 
 //The client's response to a roots/list request from the server.
 //This result contains an array of Root objects, each representing a root directory

@@ -8,11 +8,44 @@ import (
 	"github.com/victorvbello/gomcp/mcp/types"
 )
 
-type notificationHandler func(notification types.NotificationInterface) error
-type responseHandler func(response types.JSONRPCGeneralResponse) error
+const (
+	SERVER_PROTOCOLO_INTERFACE_TYPE = iota + 700
+	CLIENT_PROTOCOLO_INTERFACE_TYPE
+)
 
-// func(request types.RequestInterface, extra *RequestHandlerExtra) (types.ResultInterface, error)
-type requestHandler func(request types.RequestInterface, extra *RequestHandlerExtra) (types.ResultInterface, error)
+type NotificationHandler func(notification types.NotificationInterface) error
+type ResponseHandler func(response types.JSONRPCGeneralResponse) error
+type RequestHandler func(request types.RequestInterface, extra *RequestHandlerExtra) (types.ResultInterface, error)
+
+type ProtocolInterface interface {
+	ProtocolInterfaceType() int
+	//Callback for when the connection is closed for any reason.
+	//
+	//This is invoked when close() is called as well.
+	OnClose() error
+	//Callback for when an error occurs.
+	//
+	//Note that errors are not necessarily fatal; they are used for reporting any kind of exceptional condition out of band.
+	OnError(err error) error
+	//Add external Action on error
+	SetOnErrorCallBack(func(err error))
+	//A handler to invoke for any request types that do not have their own handler installed.
+	FallbackRequestHandler() RequestHandler
+	//A handler to invoke for any notification types that do not have their own handler installed.
+	FallbackNotificationHandler() NotificationHandler
+	//A method to check if a capability is supported by the remote side, for the given method to be called.
+	//
+	//This should be implemented by parent struct
+	AssertCapabilityForMethod(req types.RequestInterface) error
+	//A method to check if a notification is supported by the local side, for the given method to be sent.
+	//
+	//This should be implemented by parent struct
+	AssertNotificationCapability(notify types.NotificationInterface) error
+	//A method to check if a request handler is supported by the local side, for the given method to be handled.
+	//
+	//This should be implemented by parent struct
+	AssertRequestHandlerCapability(req types.RequestInterface) error
+}
 
 type RequestOptions struct {
 	TransportSendOptions
@@ -39,7 +72,7 @@ type RequestOptions struct {
 //Check if context was canceled
 func (ro *RequestOptions) Canceled() bool {
 	if ro.Context == nil {
-		return true
+		return false
 	}
 	return ro.Context.Err() == context.Canceled
 }
@@ -48,7 +81,7 @@ type RequestHandlerExtra struct {
 	//This only can be a WithCancel context
 	Context context.Context
 	//Information about a validated access token, provided to request handlers.
-	AuthInfo types.AuthInfo
+	AuthInfo *types.AuthInfo
 	//The session ID from the transport, if available.
 	SessionID string
 	//Metadata from the original request.
@@ -56,6 +89,8 @@ type RequestHandlerExtra struct {
 	//The JSON-RPC ID of the request being handled.
 	//This can be useful for tracking or logging purposes.
 	RequestID types.RequestID
+	//The original HTTP request.
+	RequestInfo *RequestInfo
 	//Sends a notification that relates to the current request being handled.
 	//
 	//This is used by certain transports to correctly associate related messages.
@@ -63,7 +98,7 @@ type RequestHandlerExtra struct {
 	//Sends a request that relates to the current request being handled.
 	//
 	//This is used by certain transports to correctly associate related messages.
-	SendRequest func(request types.RequestInterface, opts RequestOptions) (types.ResultInterface, error)
+	SendRequest func(request types.RequestInterface, opts *RequestOptions) (types.ResultInterface, error)
 }
 
 //Check if context was canceled
@@ -112,6 +147,9 @@ func (t *timeoutConfig) Start() {
 
 //Call the cancel func of context
 func (t *timeoutConfig) Clear() {
+	if t.contextCancel == nil {
+		return
+	}
 	t.contextCancel()
 }
 
@@ -142,6 +180,12 @@ type muxMapRequestHandlerCancel struct {
 	m  map[types.RequestID]context.CancelFunc
 }
 
+func newMuxMapRequestHandlerCancel() *muxMapRequestHandlerCancel {
+	return &muxMapRequestHandlerCancel{
+		m: make(map[types.RequestID]context.CancelFunc),
+	}
+}
+
 func (xm *muxMapRequestHandlerCancel) Clear() {
 	xm.mu.Lock()
 	xm.m = make(map[types.RequestID]context.CancelFunc)
@@ -170,23 +214,29 @@ func (xm *muxMapRequestHandlerCancel) Delete(key types.RequestID) {
 //muxMapRequestHandlers
 type muxMapRequestHandlers struct {
 	mu sync.RWMutex
-	m  map[string]requestHandler
+	m  map[string]RequestHandler
+}
+
+func newMuxMapRequestHandlers() *muxMapRequestHandlers {
+	return &muxMapRequestHandlers{
+		m: make(map[string]RequestHandler),
+	}
 }
 
 func (xm *muxMapRequestHandlers) Clear() {
 	xm.mu.Lock()
-	xm.m = make(map[string]requestHandler)
+	xm.m = make(map[string]RequestHandler)
 	xm.mu.Unlock()
 }
 
-func (xm *muxMapRequestHandlers) Get(key string) (requestHandler, bool) {
+func (xm *muxMapRequestHandlers) Get(key string) (RequestHandler, bool) {
 	xm.mu.RLock()
 	val, ok := xm.m[key]
 	xm.mu.RUnlock()
 	return val, ok
 }
 
-func (xm *muxMapRequestHandlers) Set(key string, value requestHandler) {
+func (xm *muxMapRequestHandlers) Set(key string, value RequestHandler) {
 	xm.mu.Lock()
 	xm.m[key] = value
 	xm.mu.Unlock()
@@ -201,29 +251,35 @@ func (xm *muxMapRequestHandlers) Delete(key string) {
 //muxMapResponseHandlers
 type muxMapResponseHandlers struct {
 	mu sync.RWMutex
-	m  map[int]responseHandler
+	m  map[int]ResponseHandler
+}
+
+func newMuxMapResponseHandlers() *muxMapResponseHandlers {
+	return &muxMapResponseHandlers{
+		m: make(map[int]ResponseHandler),
+	}
 }
 
 func (xm *muxMapResponseHandlers) Clear() {
 	xm.mu.Lock()
-	xm.m = make(map[int]responseHandler)
+	xm.m = make(map[int]ResponseHandler)
 	xm.mu.Unlock()
 }
 
-func (xm *muxMapResponseHandlers) Get(key int) (responseHandler, bool) {
+func (xm *muxMapResponseHandlers) Get(key int) (ResponseHandler, bool) {
 	xm.mu.RLock()
 	val, ok := xm.m[key]
 	xm.mu.RUnlock()
 	return val, ok
 }
 
-func (xm *muxMapResponseHandlers) Set(key int, value responseHandler) {
+func (xm *muxMapResponseHandlers) Set(key int, value ResponseHandler) {
 	xm.mu.Lock()
 	xm.m[key] = value
 	xm.mu.Unlock()
 }
 
-func (xm *muxMapResponseHandlers) GetAll() map[int]responseHandler {
+func (xm *muxMapResponseHandlers) GetAll() map[int]ResponseHandler {
 	xm.mu.RLock()
 	val := xm.m
 	xm.mu.RUnlock()
@@ -239,23 +295,29 @@ func (xm *muxMapResponseHandlers) Delete(key int) {
 //muxMapNotificationHandlers
 type muxMapNotificationHandlers struct {
 	mu sync.RWMutex
-	m  map[string]notificationHandler
+	m  map[string]NotificationHandler
+}
+
+func newMuxMapNotificationHandlers() *muxMapNotificationHandlers {
+	return &muxMapNotificationHandlers{
+		m: make(map[string]NotificationHandler),
+	}
 }
 
 func (xm *muxMapNotificationHandlers) Clear() {
 	xm.mu.Lock()
-	xm.m = make(map[string]notificationHandler)
+	xm.m = make(map[string]NotificationHandler)
 	xm.mu.Unlock()
 }
 
-func (xm *muxMapNotificationHandlers) Get(key string) (notificationHandler, bool) {
+func (xm *muxMapNotificationHandlers) Get(key string) (NotificationHandler, bool) {
 	xm.mu.RLock()
 	val, ok := xm.m[key]
 	xm.mu.RUnlock()
 	return val, ok
 }
 
-func (xm *muxMapNotificationHandlers) Set(key string, value notificationHandler) {
+func (xm *muxMapNotificationHandlers) Set(key string, value NotificationHandler) {
 	xm.mu.Lock()
 	xm.m[key] = value
 	xm.mu.Unlock()
@@ -271,6 +333,12 @@ func (xm *muxMapNotificationHandlers) Delete(key string) {
 type muxMapProgressHandlers struct {
 	mu sync.RWMutex
 	m  map[int]types.ProgressCallback
+}
+
+func newMuxMapProgressHandlers() *muxMapProgressHandlers {
+	return &muxMapProgressHandlers{
+		m: make(map[int]types.ProgressCallback),
+	}
 }
 
 func (xm *muxMapProgressHandlers) Clear() {
@@ -302,6 +370,12 @@ func (xm *muxMapProgressHandlers) Delete(key int) {
 type muxMapTimeoutConfig struct {
 	mu sync.RWMutex
 	m  map[int]*timeoutConfig
+}
+
+func newMuxMapTimeoutConfig() *muxMapTimeoutConfig {
+	return &muxMapTimeoutConfig{
+		m: make(map[int]*timeoutConfig),
+	}
 }
 
 func (xm *muxMapTimeoutConfig) Clear() {

@@ -27,20 +27,29 @@ func (lg *Logger) fieldsToString() string {
 	return result
 }
 
+func (lg *Logger) formatLog(flag string, fields LogFields, msg string) string {
+	data := lg.fieldsToString()
+	step := ""
+	if data != "" {
+		step = "-"
+	}
+	return fmt.Sprintf("%s: %s %s %s\n", flag, msg, step, data)
+}
+
 func (lg *Logger) Info(fields LogFields, msg string) {
-	lg.Log.Printf("[INFO]: %s - %s\n", msg, lg.fieldsToString())
+	lg.Log.Printf(lg.formatLog("[INFO]", fields, msg))
 }
 
 func (lg *Logger) Error(fields LogFields, msg string) {
-	lg.Log.Printf("[ERROR]: %s - %s\n", msg, lg.fieldsToString())
+	lg.Log.Printf(lg.formatLog("[ERROR]", fields, msg))
 }
 
 func (lg *Logger) Warning(fields LogFields, msg string) {
-	lg.Log.Printf("[WARNING]: %s - %s\n", msg, lg.fieldsToString())
+	lg.Log.Printf(lg.formatLog("[WARNING]", fields, msg))
 }
 
 func (lg *Logger) Fatal(fields LogFields, msg string) {
-	lg.Log.Fatalf("[FATAL]: %s - %s\n", msg, lg.fieldsToString())
+	lg.Log.Fatalf(lg.formatLog("[FATAL]", fields, msg))
 }
 
 func (lg *Logger) AddFields(fields LogFields) {

@@ -18,6 +18,8 @@ const (
 var ErrCancelFunNotFound = fmt.Errorf("cancel function not found")
 
 type Protocol struct {
+	logger               utils.LogService
+	owner                ProtocolInterface
 	transport            Transport
 	requestMessageID     *muxRequestMessageID
 	requestHandlerCancel *muxMapRequestHandlerCancel
@@ -26,45 +28,23 @@ type Protocol struct {
 	notificationHandlers *muxMapNotificationHandlers
 	progressHandlers     *muxMapProgressHandlers
 	timeoutInfo          *muxMapTimeoutConfig
-	logger               utils.LogService
 	options              *ProtocolOptions
-	//Callback for when the connection is closed for any reason.
-	//
-	//This is invoked when close() is called as well.
-	OnClose func() error
-	//Callback for when an error occurs.
-	//
-	//Note that errors are not necessarily fatal; they are used for reporting any kind of exceptional condition out of band.
-	OnError func(err error) error
-	//A handler to invoke for any request types that do not have their own handler installed.
-	FallbackRequestHandler requestHandler
-	//A handler to invoke for any notification types that do not have their own handler installed.
-	FallbackNotificationHandler notificationHandler
-	//A method to check if a capability is supported by the remote side, for the given method to be called.
-	//
-	//This should be implemented by parent struct
-	AssertCapabilityForMethod func(method string) error
-	//A method to check if a notification is supported by the local side, for the given method to be sent.
-	//
-	//This should be implemented by parent struct
-	AssertNotificationCapability func(method string) error
-	//A method to check if a request handler is supported by the local side, for the given method to be handled.
-	//
-	//This should be implemented by parent struct
-	AssertRequestHandlerCapability func(method string) error
 }
 
-func NewProtocol(opts *ProtocolOptions) *Protocol {
+func NewProtocol(opts *ProtocolOptions, pi ProtocolInterface) *Protocol {
 	newProtocol := &Protocol{
+		owner:                pi,
 		requestMessageID:     new(muxRequestMessageID),
-		requestHandlerCancel: new(muxMapRequestHandlerCancel),
-		requestHandlers:      new(muxMapRequestHandlers),
-		responseHandlers:     new(muxMapResponseHandlers),
-		notificationHandlers: new(muxMapNotificationHandlers),
-		progressHandlers:     new(muxMapProgressHandlers),
+		requestHandlerCancel: newMuxMapRequestHandlerCancel(),
+		requestHandlers:      newMuxMapRequestHandlers(),
+		responseHandlers:     newMuxMapResponseHandlers(),
+		notificationHandlers: newMuxMapNotificationHandlers(),
+		progressHandlers:     newMuxMapProgressHandlers(),
+		timeoutInfo:          newMuxMapTimeoutConfig(),
 		logger:               utils.NewLoggerService(),
 		options:              opts,
 	}
+
 	newProtocol.logger = utils.NewLoggerService()
 	newProtocol.SetNotificationHandler(types.NewCancelledNotification(nil), func(notification types.NotificationInterface) error {
 		notify := notification.(*types.CancelledNotification)
@@ -83,7 +63,7 @@ func NewProtocol(opts *ProtocolOptions) *Protocol {
 	})
 
 	newProtocol.SetRequestHandler(types.NewPingRequest(), func(request types.RequestInterface, extra *RequestHandlerExtra) (types.ResultInterface, error) {
-		// Automatic pong by default.
+		//Automatic pong by default.
 		return &types.EmptyResult{}, nil
 	})
 
@@ -135,12 +115,12 @@ func (p *Protocol) Connect(transport Transport) {
 	p.transport.SetGlobalOnError(func(err error) {
 		p.onError(err)
 	})
-	p.transport.SetGlobalOnMessage(func(message types.JSONRPCMessage, extra interface{}) {
+	p.transport.SetGlobalOnMessage(func(message types.JSONRPCMessage, extra *MessageExtraInfo) {
 		switch msg := message.(type) {
 		case types.JSONRPCGeneralResponse:
 			p.onResponse(msg)
 		case *types.JSONRPCRequest:
-			p.onRequest(msg, extra.(*RequestHandlerExtra))
+			p.onRequest(msg, extra)
 		case *types.JSONRPCNotification:
 			p.onNotification(msg)
 		default:
@@ -159,7 +139,7 @@ func (p *Protocol) onClose() {
 	p.responseHandlers.Clear()
 	p.progressHandlers.Clear()
 	p.transport = nil
-	p.OnClose()
+	p.owner.OnClose()
 
 	globalError := types.NewMcpError(types.ERROR_CODE_CONNECTION_CLOSED, "Connection closed", nil)
 	jsonError := &types.JSONRPCError{Error: globalError}
@@ -169,34 +149,31 @@ func (p *Protocol) onClose() {
 }
 
 func (p *Protocol) onError(err error) {
-	if p.OnError == nil {
-		return
-	}
-	p.OnError(err)
+	p.owner.OnError(err)
 }
 
 func (p *Protocol) onNotification(notification *types.JSONRPCNotification) {
 	handlerType := "notificationHandlers"
-	handler, ok := p.notificationHandlers.Get(notification.Notification.GetNotification().Method)
+	handler, ok := p.notificationHandlers.Get(notification.NotificationInterface.GetNotification().Method)
 	if !ok {
 		handlerType = "fallbackNotificationHandler"
-		handler = p.FallbackNotificationHandler
+		handler = p.owner.FallbackNotificationHandler()
 	}
 	if handler == nil {
 		return
 	}
-	err := handler(notification.Notification)
+	err := handler(notification.NotificationInterface)
 	if err != nil {
 		p.onError(fmt.Errorf("uncaught error in notification handler[%s] %v %v", handlerType, err, notification))
 	}
 }
 
-func (p *Protocol) onRequest(request *types.JSONRPCRequest, extra *RequestHandlerExtra) {
+func (p *Protocol) onRequest(request *types.JSONRPCRequest, extra *MessageExtraInfo) {
 	handlerType := "requestHandlers"
-	handler, ok := p.requestHandlers.Get(request.Method)
+	handler, ok := p.requestHandlers.Get(request.GetRequest().Method)
 	if !ok {
 		handlerType = "fallbackRequestHandler"
-		handler = p.FallbackRequestHandler
+		handler = p.owner.FallbackRequestHandler()
 	}
 	if handler == nil {
 		_, err := p.transport.Send(&types.JSONRPCError{
@@ -209,31 +186,55 @@ func (p *Protocol) onRequest(request *types.JSONRPCRequest, extra *RequestHandle
 		}, nil)
 		if err != nil {
 			p.onError(fmt.Errorf("failed to send an error response %v", err))
+			return
 		}
 	}
-
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	p.requestHandlerCancel.Set(request.ID, cancelFunc)
 	defer func() {
 		p.requestHandlerCancel.Delete(request.ID)
 	}()
+	safeRequestParams := &types.BaseRequestParams{}
+	if request.GetRequest().Params != nil {
+		safeRequestParams = request.GetRequest().Params
+	}
+	RhExMeta, err := types.NewMetadataRequestFromMetadata(safeRequestParams.Metadata)
+	if err != nil {
+		_, err := p.transport.Send(&types.JSONRPCError{
+			JSONRPC: types.JSONRPC_VERSION,
+			ID:      request.ID,
+			Error: &types.Error{
+				Code:    types.ERROR_CODE_INTERNAL_ERROR,
+				Message: fmt.Sprintf("handler request error %s, [%v], %v ", handlerType, request, err),
+			},
+		}, nil)
+		if err != nil {
+			p.onError(fmt.Errorf("failed to send an error response %v", err))
+			return
+		}
+	}
+	safeExtra := &MessageExtraInfo{}
+	if extra != nil {
+		safeExtra = extra
+	}
 	extraRequestHandle := &RequestHandlerExtra{
-		Context:   ctx,
-		SessionID: p.transport.GetSessionID(),
-		Meta:      request.Params.Metadata,
-		AuthInfo:  extra.AuthInfo,
-		RequestID: request.ID,
+		Context:     ctx,
+		SessionID:   p.transport.GetSessionID(),
+		Meta:        RhExMeta,
+		AuthInfo:    safeExtra.AuthInfo,
+		RequestID:   request.ID,
+		RequestInfo: safeExtra.RequestInfo,
 		SendNotification: func(notification types.NotificationInterface) {
 			p.Notification(notification, &NotificationOptions{RelatedRequestID: request.ID})
 		},
-		SendRequest: func(req types.RequestInterface, opts RequestOptions) (types.ResultInterface, error) {
+		SendRequest: func(req types.RequestInterface, opts *RequestOptions) (types.ResultInterface, error) {
 			opts.RelatedRequestID = request.ID
 			return p.Request(req, opts)
 		},
 	}
-
-	result, err := handler(request, extraRequestHandle)
-	if ctx.Err() != nil {
+	result, err := handler(request.RequestInterface, extraRequestHandle)
+	if err := ctx.Err(); err != nil {
+		p.logger.Info(nil, fmt.Sprintf("context for method %s was closed %v", request.GetRequest().Method, err))
 		return
 	}
 	if err != nil {
@@ -250,7 +251,6 @@ func (p *Protocol) onRequest(request *types.JSONRPCRequest, extra *RequestHandle
 			return
 		}
 	}
-
 	_, err = p.transport.Send(&types.JSONRPCResponse{
 		JSONRPC: types.JSONRPC_VERSION,
 		ID:      request.ID,
@@ -260,7 +260,6 @@ func (p *Protocol) onRequest(request *types.JSONRPCRequest, extra *RequestHandle
 		p.onError(fmt.Errorf("failed to send result %v", err))
 		return
 	}
-
 }
 
 func (p *Protocol) onProgress(progressNotify *types.ProgressNotification) {
@@ -333,32 +332,39 @@ func (p *Protocol) Close() {
 //Sends a request and wait for a response.
 //
 //Do not use this method to emit notifications! Use notification() instead.
-func (p *Protocol) Request(request types.RequestInterface, opts RequestOptions) (gResp types.ResultInterface, gErr error) {
+func (p *Protocol) Request(request types.RequestInterface, opts *RequestOptions) (gResp types.ResultInterface, gErr error) {
+	safeOpts := opts
+	if safeOpts == nil {
+		safeOpts = &RequestOptions{}
+	}
 	if p.transport == nil {
 		gErr = fmt.Errorf("transport not connected")
 		return
 	}
 	if p.options.EnforceStrictCapabilities != nil && *p.options.EnforceStrictCapabilities {
-		p.AssertCapabilityForMethod(request.GetRequest().Method)
+		p.owner.AssertCapabilityForMethod(request)
 	}
-	if opts.Canceled() {
+	if safeOpts.Canceled() {
 		gErr = fmt.Errorf("the request was canceled by an external close function")
 		return
 	}
+
 	messageID := p.requestMessageID.Increase()
 	jsonrpcRequest := &types.JSONRPCRequest{
-		JSONRPC: types.JSONRPC_VERSION,
-		ID:      types.RequestID(messageID),
-		Request: request.GetRequest(),
+		JSONRPC:          types.JSONRPC_VERSION,
+		ID:               types.RequestID(messageID),
+		RequestInterface: request,
 	}
-	if opts.Onprogress != nil {
-		p.progressHandlers.Set(messageID, opts.Onprogress)
-		jsonrpcRequest.Request.Params = &types.RequestParams{
-			Metadata: &types.MetadataRequest{
-				ProgressToken: messageID,
-			},
-			AdditionalProperties: request.GetRequest().Params.AdditionalProperties,
-		}
+	if safeOpts.Onprogress != nil {
+		p.progressHandlers.Set(messageID, safeOpts.Onprogress)
+		jsonrpcRequest.RequestInterface = &types.Request{
+			Method: request.GetRequest().Method,
+			Params: &types.BaseRequestParams{
+				Metadata: map[string]interface{}{
+					"progressToken": types.ProgressToken(messageID),
+				},
+				AdditionalProperties: request.GetRequest().Params.AdditionalProperties,
+			}}
 	}
 	type requestReturnChan struct {
 		r types.ResultInterface
@@ -366,15 +372,16 @@ func (p *Protocol) Request(request types.RequestInterface, opts RequestOptions) 
 	}
 	returnChan := make(chan requestReturnChan)
 	defer func() {
-		resultReturn := <-returnChan
-		if gResp == nil {
+		fmt.Println("---- 1")
+		select {
+		case resultReturn := <-returnChan:
 			gResp = resultReturn.r
+			if gErr != nil {
+				gErr = resultReturn.e
+			}
 		}
-		if gErr == nil {
-			gErr = resultReturn.e
-		}
+		fmt.Println("---- 2")
 	}()
-
 	cancelFlow := func(reason types.ErrorInterface) {
 		var once sync.Once
 		once.Do(func() {
@@ -386,55 +393,63 @@ func (p *Protocol) Request(request types.RequestInterface, opts RequestOptions) 
 				RequestID: types.RequestID(messageID),
 				Reason:    reason.ToError().Error(),
 			}), &TransportSendOptions{
-				RelatedRequestID:  opts.RelatedRequestID,
-				ResumptionToken:   opts.ResumptionToken,
-				OnResumptionToken: opts.OnResumptionToken,
+				RelatedRequestID:  safeOpts.RelatedRequestID,
+				ResumptionToken:   safeOpts.ResumptionToken,
+				OnResumptionToken: safeOpts.OnResumptionToken,
 			})
 			if err != nil {
 				p.onError(fmt.Errorf("failed to send cancellation: %v", err))
 			}
-			returnChan <- requestReturnChan{
-				e: reason.ToError(),
-			}
+			go func() {
+				returnChan <- requestReturnChan{
+					e: reason.ToError(),
+				}
+			}()
 		})
 	}
 
-	if opts.Context != nil {
+	if safeOpts.Context != nil {
 		//If RequestOptions has a cancel context
-		if _, ok := opts.Context.Deadline(); ok {
+		if _, ok := safeOpts.Context.Deadline(); ok {
 			go func() {
 				//When the cancel function was called
-				<-opts.Context.Done()
+				<-safeOpts.Context.Done()
 				cancelFlow(&types.Error{Message: "context was canceled from outside"})
 			}()
 		}
 	}
 
 	p.responseHandlers.Set(messageID, func(response types.JSONRPCGeneralResponse) error {
-		if opts.Canceled() {
+		if safeOpts.Canceled() {
 			return nil
 		}
 		if err, ok := response.(*types.JSONRPCError); ok {
 			lErr := err.Error.ToError()
-			returnChan <- requestReturnChan{
-				e: lErr,
-			}
+			go func() {
+				returnChan <- requestReturnChan{
+					e: lErr,
+				}
+			}()
 			return lErr
 		}
 		if res, ok := response.(*types.JSONRPCResponse); ok {
-			returnChan <- requestReturnChan{
-				r: res,
-			}
+			go func() {
+				returnChan <- requestReturnChan{
+					r: res.Result,
+				}
+			}()
 			return nil
 		}
 		err := fmt.Errorf("invalid response type")
-		returnChan <- requestReturnChan{
-			e: err,
-		}
+		go func() {
+			returnChan <- requestReturnChan{
+				e: err,
+			}
+		}()
 		return err
 	})
 
-	timeout := opts.Timeout
+	timeout := safeOpts.Timeout
 	if timeout == 0 {
 		timeout = DEFAULT_REQUEST_TIMEOUT_MSEC
 	}
@@ -447,53 +462,52 @@ func (p *Protocol) Request(request types.RequestInterface, opts RequestOptions) 
 	}
 
 	var resetTimeoutOnProgress bool
-	if opts.ResetTimeoutOnProgress != nil {
-		resetTimeoutOnProgress = *opts.ResetTimeoutOnProgress
+	if safeOpts.ResetTimeoutOnProgress != nil {
+		resetTimeoutOnProgress = *safeOpts.ResetTimeoutOnProgress
 	}
-
 	p.setupTimeout(messageID, &timeoutConfig{
 		Timeout:                time.Duration(timeout),
-		MaxTotalTimeout:        opts.MaxTotalTimeout,
+		MaxTotalTimeout:        safeOpts.MaxTotalTimeout,
 		OnTimeout:              timeoutHandler,
 		ResetTimeoutOnProgress: resetTimeoutOnProgress,
 	})
-
-	res, err := p.transport.Send(jsonrpcRequest,
+	_, err := p.transport.Send(jsonrpcRequest,
 		&TransportSendOptions{
-			RelatedRequestID:  opts.RelatedRequestID,
-			ResumptionToken:   opts.ResumptionToken,
-			OnResumptionToken: opts.OnResumptionToken,
+			RelatedRequestID:  safeOpts.RelatedRequestID,
+			ResumptionToken:   safeOpts.ResumptionToken,
+			OnResumptionToken: safeOpts.OnResumptionToken,
 		})
-
 	if err != nil {
 		p.cleanupTimeout(messageID)
-		returnChan <- requestReturnChan{
-			e: err,
-		}
+		go func() {
+			returnChan <- requestReturnChan{
+				e: err,
+			}
+		}()
 		return
-	}
-
-	returnChan <- requestReturnChan{
-		r: res,
 	}
 	return
 }
 
 //Emits a notification, which is a one-way message that does not expect a response.
 func (p *Protocol) Notification(notification types.NotificationInterface, opts *NotificationOptions) error {
+	safeOpts := opts
+	if safeOpts == nil {
+		safeOpts = &NotificationOptions{}
+	}
 	if p.transport == nil {
 		return fmt.Errorf("transport not connected")
 	}
-	err := p.AssertNotificationCapability(notification.GetNotification().Method)
+	err := p.owner.AssertNotificationCapability(notification)
 	if err != nil {
 		return fmt.Errorf("assertNotificationCapability error: %v", err)
 	}
 	jsonrpcNotification := &types.JSONRPCNotification{
-		JSONRPC:      types.JSONRPC_VERSION,
-		Notification: notification,
+		JSONRPC:               types.JSONRPC_VERSION,
+		NotificationInterface: notification,
 	}
 
-	_, err = p.transport.Send(jsonrpcNotification, &TransportSendOptions{RelatedRequestID: opts.RelatedRequestID})
+	_, err = p.transport.Send(jsonrpcNotification, &TransportSendOptions{RelatedRequestID: safeOpts.RelatedRequestID})
 	if err != nil {
 		return fmt.Errorf("transport.Send error: %v", err)
 	}
@@ -503,17 +517,16 @@ func (p *Protocol) Notification(notification types.NotificationInterface, opts *
 //Registers a handler to invoke when this protocol object receives a request with the given method.
 //
 //Note that this will replace any previous request handler for the same method.
-func (p *Protocol) SetRequestHandler(request types.RequestInterface, handler requestHandler) {
+func (p *Protocol) SetRequestHandler(request types.RequestInterface, handler RequestHandler) {
 	method := request.GetRequest().Method
-	err := p.AssertRequestHandlerCapability(method)
+	err := p.owner.AssertRequestHandlerCapability(request)
 	if err != nil {
 		detailErr := fmt.Errorf("assertRequestHandlerCapability %v", err)
 		p.onError(detailErr)
 	}
 
-	if !p.AssertCanSetRequestHandler(method) {
-		detailErr := fmt.Errorf("method %s has been registered", method)
-		p.onError(detailErr)
+	if err := p.AssertCanSetRequestHandler(method); err != nil {
+		p.onError(fmt.Errorf("p.AssertCanSetRequestHandler, %v", err))
 	}
 
 	p.requestHandlers.Set(method, handler)
@@ -525,15 +538,18 @@ func (p *Protocol) RemoveRequestHandler(method string) {
 }
 
 //Asserts that a request handler has not already been set for the given method, in preparation for a new one being automatically installed.
-func (p *Protocol) AssertCanSetRequestHandler(method string) bool {
+func (p *Protocol) AssertCanSetRequestHandler(method string) error {
 	_, ok := p.requestHandlers.Get(method)
-	return !ok
+	if ok {
+		return fmt.Errorf("method %s has been registered", method)
+	}
+	return nil
 }
 
 //Registers a handler to invoke when this protocol object receives a notification with the given method.
 //
 //Note that this will replace any previous notification handler for the same method.
-func (p *Protocol) SetNotificationHandler(notification types.NotificationInterface, handler notificationHandler) {
+func (p *Protocol) SetNotificationHandler(notification types.NotificationInterface, handler NotificationHandler) {
 	p.notificationHandlers.Set(notification.GetNotification().Method, handler)
 }
 

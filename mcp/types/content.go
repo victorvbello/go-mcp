@@ -13,8 +13,6 @@ type Content interface {
 
 type BaseContent struct {
 	Type string `json:"type"`
-	//Optional annotations for the client.
-	Annotations *Annotations `json:"annotations,omitempty"`
 }
 
 //Text provided to or from an LLM.
@@ -26,6 +24,13 @@ type TextContent struct {
 }
 
 func (t *TextContent) TypeOfContent() string { return TEXT_CONTENT_TYPE }
+
+func NewTextContent(txt string) *TextContent {
+	ntxt := new(TextContent)
+	ntxt.Type = "text"
+	ntxt.Text = txt
+	return ntxt
+}
 
 //An image provided to or from an LLM.
 type ImageContent struct {

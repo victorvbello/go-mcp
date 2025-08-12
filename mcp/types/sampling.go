@@ -1,5 +1,12 @@
 package types
 
+import (
+	"encoding/json"
+	"fmt"
+
+	"github.com/victorvbello/gomcp/mcp/methods"
+)
+
 //A request from the server to sample an LLM via the client. The client has full discretion over which model to select. The client should also inform the user before beginning sampling, to allow them to inspect the request (human in the loop) and decide whether to approve it.
 //
 //Only method: METHOD_SAMPLING_CREATE_MESSAGE
@@ -10,6 +17,50 @@ type CreateMessageRequest struct {
 
 func (cmr *CreateMessageRequest) TypeOfServerRequest() int {
 	return CREATE_MESSAGE_REQUEST_SERVER_REQUEST_TYPE
+}
+func (cmr *CreateMessageRequest) TypeOfRequestInterface() int {
+	return CREATE_MESSAGE_REQUEST_REQUEST_INTERFACE_TYPE
+}
+func (cmr *CreateMessageRequest) GetRequest() Request {
+	return cmr.Request
+}
+
+func (cmr *CreateMessageRequest) MarshalJSON() ([]byte, error) {
+	//bridge struct to marshal known fields
+	aux := struct {
+		Request
+	}{
+		Request: cmr.Request,
+	}
+	knownFields, err := json.Marshal(&aux)
+	if err != nil {
+		return nil, fmt.Errorf("marshal known fields: %w", err)
+	}
+	//Marshal knownFields to map
+	baseMap := make(map[string]interface{})
+	if err := json.Unmarshal(knownFields, &baseMap); err != nil {
+		return nil, fmt.Errorf("unmarshal known fields to map: %w", err)
+	}
+	//Marshal CreateMessageParams
+	params, err := cmr.CreateMessageParams.MarshalJSON()
+	if err != nil {
+		return nil, fmt.Errorf("marshal CreateMessageParams fields: %w", err)
+	}
+	paramsMap := make(map[string]interface{})
+	if err := json.Unmarshal(params, &paramsMap); err != nil {
+		return nil, fmt.Errorf("unmarshal params fields: %w", err)
+	}
+	baseMap["params"] = paramsMap
+	return json.Marshal(baseMap)
+}
+
+func NewCreateMessageRequest(params *CreateMessageParams) *CreateMessageRequest {
+	cmr := new(CreateMessageRequest)
+	cmr.Method = methods.METHOD_SAMPLING_CREATE_MESSAGE
+	if params != nil {
+		cmr.CreateMessageParams = *params
+	}
+	return cmr
 }
 
 type CreateMessageResult struct {
@@ -28,6 +79,7 @@ func (cmr *CreateMessageResult) TypeOfResultInterface() int {
 }
 
 type CreateMessageParams struct {
+	BaseRequestParams
 	Messages []SamplingMessage `json:"messages"`
 	//The server's preferences for which model to select. The client MAY ignore these preferences.
 	ModelPreferences *ModelPreferences `json:"modelPreferences,omitempty"`
@@ -43,6 +95,92 @@ type CreateMessageParams struct {
 	StopSequences []string `json:"stopSequences,omitempty"`
 	//Optional metadata to pass through to the LLM provider. The format of this metadata is provider-specific.
 	Metadata interface{} `json:"metadata,omitempty"`
+}
+
+func (cmp *CreateMessageParams) MarshalJSON() ([]byte, error) {
+	//bridge struct to marshal known fields
+	aux := struct {
+		Messages         []SamplingMessage `json:"messages"`
+		ModelPreferences *ModelPreferences `json:"modelPreferences,omitempty"`
+		SystemPrompt     string            `json:"systemPrompt,omitempty"`
+		IncludeContext   string            `json:"includeContext,omitempty"`
+		Temperature      float64           `json:"temperature,omitempty"`
+		MaxTokens        int               `json:"maxTokens"`
+		StopSequences    []string          `json:"stopSequences,omitempty"`
+		Metadata         interface{}       `json:"metadata,omitempty"`
+	}{
+		Messages:         cmp.Messages,
+		ModelPreferences: cmp.ModelPreferences,
+		SystemPrompt:     cmp.SystemPrompt,
+		IncludeContext:   cmp.IncludeContext,
+		Temperature:      cmp.Temperature,
+		MaxTokens:        cmp.MaxTokens,
+		StopSequences:    cmp.StopSequences,
+		Metadata:         cmp.Metadata,
+	}
+	knownFields, err := json.Marshal(&aux)
+	if err != nil {
+		return nil, fmt.Errorf("marshal known fields: %w", err)
+	}
+	//Marshal knownFields to map
+	baseMap := make(map[string]interface{})
+	if err := json.Unmarshal(knownFields, &baseMap); err != nil {
+		return nil, fmt.Errorf("unmarshal known fields to map: %w", err)
+	}
+	//Marshal base.BaseRequestParams
+	baseExtra, err := cmp.BaseRequestParams.MarshalJSON()
+	if err != nil {
+		return nil, fmt.Errorf("marshal base fields: %w", err)
+	}
+	if err := json.Unmarshal(baseExtra, &baseMap); err != nil {
+		return nil, fmt.Errorf("unmarshal base fields: %w", err)
+	}
+	return json.Marshal(baseMap)
+}
+
+func (cmp *CreateMessageParams) UnmarshalJSON(data []byte) error {
+	aux := struct {
+		Messages         []SamplingMessage `json:"messages"`
+		ModelPreferences *ModelPreferences `json:"modelPreferences,omitempty"`
+		SystemPrompt     string            `json:"systemPrompt,omitempty"`
+		IncludeContext   string            `json:"includeContext,omitempty"`
+		Temperature      float64           `json:"temperature,omitempty"`
+		MaxTokens        int               `json:"maxTokens"`
+		StopSequences    []string          `json:"stopSequences,omitempty"`
+		Metadata         interface{}       `json:"metadata,omitempty"`
+	}{}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return fmt.Errorf("json.Unmarshal: %v", err)
+	}
+	aux.Messages = cmp.Messages
+	aux.ModelPreferences = cmp.ModelPreferences
+	aux.SystemPrompt = cmp.SystemPrompt
+	aux.IncludeContext = cmp.IncludeContext
+	aux.Temperature = cmp.Temperature
+	aux.MaxTokens = cmp.MaxTokens
+	aux.StopSequences = cmp.StopSequences
+	aux.Metadata = cmp.Metadata
+
+	raw := make(map[string]interface{})
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("error unmarshaling global data: %v", err)
+	}
+	delete(raw, "messages")
+	delete(raw, "modelPreferences")
+	delete(raw, "systemPrompt")
+	delete(raw, "includeContext")
+	delete(raw, "temperature")
+	delete(raw, "maxTokens")
+	delete(raw, "stopSequences")
+	delete(raw, "metadata")
+	bm, err := json.Marshal(raw)
+	if err != nil {
+		return fmt.Errorf("error marshaling rest of data: %v", err)
+	}
+	if err := cmp.BaseRequestParams.UnmarshalJSON(bm); err != nil {
+		return fmt.Errorf("baseRequestParams.UnmarshalJSON: %w", err)
+	}
+	return nil
 }
 
 //Describes a message issued to or received from an LLM API.

@@ -29,21 +29,26 @@ const (
 	INITIALIZED_NOTIFICATION_NOTIFICATION_INTERFACE_TYPE
 	PROGRESS_NOTIFICATION_NOTIFICATION_INTERFACE_TYPE
 	NOTIFICATION_NOTIFICATION_INTERFACE_TYPE
+	LOGGING_MESSAGE_NOTIFICATION_NOTIFICATION_INTERFACE_TYPE
+	RESOURCE_UPDATED_NOTIFICATION_NOTIFICATION_INTERFACE_TYPE
+	RESOURCE_LIST_CHANGED_NOTIFICATION_NOTIFICATION_INTERFACE_TYPE
+	TOOL_LIST_CHANGED_NOTIFICATION_NOTIFICATION_INTERFACE_TYPE
+	PROMPT_LIST_CHANGED_NOTIFICATION_NOTIFICATION_INTERFACE_TYPE
 )
 
 type Notification struct {
-	Method string              `json:"method"`
-	Params *NotificationParams `json:"params,omitempty"`
+	Method string                  `json:"method"`
+	Params *BaseNotificationParams `json:"params,omitempty"`
 }
 
-type NotificationParams struct {
+type BaseNotificationParams struct {
 	//Attach additional metadata to their notifications.
 	Metadata map[string]interface{} `json:"_meta,omitempty"`
 	//Attach additional properties, _meta is reserved by MCP
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
-func (np *NotificationParams) MarshalJSON() ([]byte, error) {
+func (np *BaseNotificationParams) MarshalJSON() ([]byte, error) {
 	raw := make(map[string]interface{})
 	if np.Metadata != nil {
 		raw["_meta"] = np.Metadata
@@ -58,10 +63,13 @@ func (np *NotificationParams) MarshalJSON() ([]byte, error) {
 	return json.Marshal(raw)
 }
 
-func (np *NotificationParams) UnmarshalJSON(data []byte) error {
+func (np *BaseNotificationParams) UnmarshalJSON(data []byte) error {
 	raw := make(map[string]interface{})
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return fmt.Errorf("error unmarshaling global data: %v", err)
+	}
+	if _, ok := raw["_meta"]; !ok {
+		return nil //No _meta field, nothing to unmarshal
 	}
 	bm, err := json.Marshal(raw["_meta"])
 	if err != nil {
@@ -70,7 +78,6 @@ func (np *NotificationParams) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(bm, &np.Metadata); err != nil {
 		return fmt.Errorf("error unmarshaling into metadata: %v", err)
 	}
-
 	delete(raw, "_meta")
 	np.AdditionalProperties = raw
 	return nil
@@ -119,12 +126,69 @@ func (cn *CancelledNotification) JSONRPCMessageType() int {
 }
 
 type CancelledNotificationParams struct {
+	BaseNotificationParams
 	//The ID of the request to cancel.
 	//
 	//This MUST correspond to the ID of a request previously issued in the same direction.
 	RequestID RequestID `json:"requestId"`
 	//An optional string describing the reason for the cancellation. This MAY be logged or presented to the user.
 	Reason string `json:"reason,omitempty"`
+}
+
+func (cnp *CancelledNotificationParams) MarshalJSON() ([]byte, error) {
+	//bridge struct to marshal known fields
+	aux := struct {
+		RequestID RequestID `json:"requestId"`
+		Reason    string    `json:"reason,omitempty"`
+	}{
+		RequestID: cnp.RequestID,
+		Reason:    cnp.Reason,
+	}
+	knownFields, err := json.Marshal(&aux)
+	if err != nil {
+		return nil, fmt.Errorf("marshal known fields: %w", err)
+	}
+	//Marshal knownFields to map
+	baseMap := make(map[string]interface{})
+	if err := json.Unmarshal(knownFields, &baseMap); err != nil {
+		return nil, fmt.Errorf("unmarshal known fields to map: %w", err)
+	}
+	//Marshal base.BaseNotificationParams
+	baseExtra, err := cnp.BaseNotificationParams.MarshalJSON()
+	if err != nil {
+		return nil, fmt.Errorf("marshal base fields: %w", err)
+	}
+	if err := json.Unmarshal(baseExtra, &baseMap); err != nil {
+		return nil, fmt.Errorf("unmarshal base fields: %w", err)
+	}
+	return json.Marshal(baseMap)
+}
+
+func (cnp *CancelledNotificationParams) UnmarshalJSON(data []byte) error {
+	aux := struct {
+		RequestID RequestID `json:"requestId"`
+		Reason    string    `json:"reason,omitempty"`
+	}{}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return fmt.Errorf("json.Unmarshal: %v", err)
+	}
+	cnp.RequestID = aux.RequestID
+	cnp.Reason = aux.Reason
+
+	raw := make(map[string]interface{})
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("error unmarshaling global data: %v", err)
+	}
+	delete(raw, "requestId")
+	delete(raw, "reason")
+	bm, err := json.Marshal(raw)
+	if err != nil {
+		return fmt.Errorf("error marshaling rest of data: %v", err)
+	}
+	if err := cnp.BaseNotificationParams.UnmarshalJSON(bm); err != nil {
+		return fmt.Errorf("BaseNotificationParams.UnmarshalJSON: %w", err)
+	}
+	return nil
 }
 
 func NewCancelledNotification(params *CancelledNotificationParams) *CancelledNotification {
@@ -152,6 +216,13 @@ func (in *InitializedNotification) TypeOfNotification() int {
 }
 func (in *InitializedNotification) GetNotification() Notification {
 	return in.Notification
+}
+
+func NewInitializedNotification(params *BaseNotificationParams) *InitializedNotification {
+	newIn := new(InitializedNotification)
+	newIn.Method = methods.METHOD_NOTIFICATION_INITIALIZED
+	newIn.Params = params
+	return newIn
 }
 
 type Progress struct {
@@ -185,9 +256,68 @@ func (pn *ProgressNotification) GetNotification() Notification {
 }
 
 type ProgressNotificationParams struct {
+	BaseNotificationParams
 	Progress
 	//The progress token which was given in the initial request, used to associate this notification with the request that is proceeding.
 	ProgressToken ProgressToken `json:"progressToken"`
+}
+
+func (pnp *ProgressNotificationParams) MarshalJSON() ([]byte, error) {
+	//bridge struct to marshal known fields
+	aux := struct {
+		Progress
+		ProgressToken ProgressToken `json:"progressToken"`
+	}{
+		Progress:      pnp.Progress,
+		ProgressToken: pnp.ProgressToken,
+	}
+	knownFields, err := json.Marshal(&aux)
+	if err != nil {
+		return nil, fmt.Errorf("marshal known fields: %w", err)
+	}
+	//Marshal knownFields to map
+	baseMap := make(map[string]interface{})
+	if err := json.Unmarshal(knownFields, &baseMap); err != nil {
+		return nil, fmt.Errorf("unmarshal known fields to map: %w", err)
+	}
+	//Marshal base.BaseNotificationParams
+	baseExtra, err := pnp.BaseNotificationParams.MarshalJSON()
+	if err != nil {
+		return nil, fmt.Errorf("marshal base fields: %w", err)
+	}
+	if err := json.Unmarshal(baseExtra, &baseMap); err != nil {
+		return nil, fmt.Errorf("unmarshal base fields: %w", err)
+	}
+	return json.Marshal(baseMap)
+}
+
+func (pnp *ProgressNotificationParams) UnmarshalJSON(data []byte) error {
+	aux := struct {
+		Progress
+		ProgressToken ProgressToken `json:"progressToken"`
+	}{}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return fmt.Errorf("json.Unmarshal: %v", err)
+	}
+	pnp.Progress = aux.Progress
+	pnp.ProgressToken = aux.ProgressToken
+
+	raw := make(map[string]interface{})
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("error unmarshaling global data: %v", err)
+	}
+	delete(raw, "progress")
+	delete(raw, "total")
+	delete(raw, "message")
+	delete(raw, "progressToken")
+	bm, err := json.Marshal(raw)
+	if err != nil {
+		return fmt.Errorf("error marshaling rest of data: %v", err)
+	}
+	if err := pnp.BaseNotificationParams.UnmarshalJSON(bm); err != nil {
+		return fmt.Errorf("BaseNotificationParams.UnmarshalJSON: %w", err)
+	}
+	return nil
 }
 
 func NewProgressNotification(params *ProgressNotificationParams) *ProgressNotification {

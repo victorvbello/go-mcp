@@ -372,7 +372,6 @@ func (p *Protocol) Request(request types.RequestInterface, opts *RequestOptions)
 	}
 	returnChan := make(chan requestReturnChan)
 	defer func() {
-		fmt.Println("---- 1")
 		select {
 		case resultReturn := <-returnChan:
 			gResp = resultReturn.r
@@ -380,7 +379,6 @@ func (p *Protocol) Request(request types.RequestInterface, opts *RequestOptions)
 				gErr = resultReturn.e
 			}
 		}
-		fmt.Println("---- 2")
 	}()
 	cancelFlow := func(reason types.ErrorInterface) {
 		var once sync.Once

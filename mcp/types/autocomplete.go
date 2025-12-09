@@ -16,6 +16,41 @@ type CompleteRequest struct {
 }
 
 func (c *CompleteRequest) TypeOfClientRequest() int { return COMPLETE_REQUEST_CLIENT_REQUEST_TYPE }
+func (c *CompleteRequest) UnmarshalJSON(data []byte) error {
+	var meta struct {
+		Method string `json:"method"`
+		Params struct {
+			BaseRequestParams
+			Ref      json.RawMessage        `json:"ref"`
+			Argument CompleteParamsArgument `json:"argument"`
+			Context  CompleteParamsContext  `json:"context"`
+		} `json:"params"`
+	}
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return fmt.Errorf("error unmarshaling global meta: %v", err)
+	}
+	c.Method = meta.Method
+	c.Params.BaseRequestParams.Meta = meta.Params.BaseRequestParams.Meta
+	c.Params.Argument = meta.Params.Argument
+	c.Params.Context = meta.Params.Context
+
+	refDataMap := make(map[string]interface{})
+	if err := json.Unmarshal(meta.Params.Ref, &refDataMap); err != nil {
+		return fmt.Errorf("error unmarshaling global data in map: %v", err)
+	}
+	var acr AutoCompleteReference
+	switch refDataMap["type"] {
+	case AUTOCOMPLETE_REF_PROMPT_TYPE:
+		acr = new(PromptReference)
+	case AUTOCOMPLETE_REF_RESOURCE_TYPE:
+		acr = new(ResourceTemplateReference)
+	}
+	if err := json.Unmarshal(meta.Params.Ref, &acr); err != nil {
+		return fmt.Errorf("error unmarshaling method: %s, err: %v", meta.Method, err)
+	}
+	c.Params.Ref = acr
+	return nil
+}
 
 func NewCompleteRequest(params *CompleteParams) *CompleteRequest {
 	ncr := new(CompleteRequest)
@@ -48,62 +83,6 @@ type CompleteParams struct {
 	//The argument's information
 	Argument CompleteParamsArgument `json:"argument"`
 	Context  CompleteParamsContext  `json:"context"`
-}
-
-func (cp *CompleteParams) MarshalJSON() ([]byte, error) {
-	//bridge struct to marshal known fields
-	aux := struct {
-		Ref      AutoCompleteReference  `json:"ref"`
-		Argument CompleteParamsArgument `json:"argument"`
-	}{
-		Ref:      cp.Ref,
-		Argument: cp.Argument,
-	}
-	knownFields, err := json.Marshal(&aux)
-	if err != nil {
-		return nil, fmt.Errorf("marshal known fields: %w", err)
-	}
-	//Marshal knownFields to map
-	baseMap := make(map[string]interface{})
-	if err := json.Unmarshal(knownFields, &baseMap); err != nil {
-		return nil, fmt.Errorf("unmarshal known fields to map: %w", err)
-	}
-	//Marshal base.BaseRequestParams
-	baseExtra, err := cp.BaseRequestParams.MarshalJSON()
-	if err != nil {
-		return nil, fmt.Errorf("marshal base fields: %w", err)
-	}
-	if err := json.Unmarshal(baseExtra, &baseMap); err != nil {
-		return nil, fmt.Errorf("unmarshal base fields: %w", err)
-	}
-	return json.Marshal(baseMap)
-}
-
-func (cp *CompleteParams) UnmarshalJSON(data []byte) error {
-	aux := struct {
-		Ref      AutoCompleteReference  `json:"ref"`
-		Argument CompleteParamsArgument `json:"argument"`
-	}{}
-	if err := json.Unmarshal(data, &aux); err != nil {
-		return fmt.Errorf("json.Unmarshal: %v", err)
-	}
-	cp.Ref = aux.Ref
-	cp.Argument = aux.Argument
-
-	raw := make(map[string]interface{})
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return fmt.Errorf("error unmarshaling global data: %v", err)
-	}
-	delete(raw, "ref")
-	delete(raw, "argument")
-	bm, err := json.Marshal(raw)
-	if err != nil {
-		return fmt.Errorf("error marshaling rest of data: %v", err)
-	}
-	if err := cp.BaseRequestParams.UnmarshalJSON(bm); err != nil {
-		return fmt.Errorf("baseRequestParams.UnmarshalJSON: %w", err)
-	}
-	return nil
 }
 
 type CompleteResultCompletion struct {

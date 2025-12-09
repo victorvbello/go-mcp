@@ -13,8 +13,8 @@ const (
 	CLIENT_PROTOCOLO_INTERFACE_TYPE
 )
 
-type NotificationHandler func(notification types.NotificationInterface) error
-type ResponseHandler func(response types.JSONRPCGeneralResponse) error
+type NotificationHandler func(ctx context.Context, notification types.NotificationInterface) error
+type ResponseHandler func(ctx context.Context, response types.JSONRPCGeneralResponse) error
 type RequestHandler func(request types.RequestInterface, extra *RequestHandlerExtra) (types.ResultInterface, error)
 
 type ProtocolInterface interface {
@@ -94,7 +94,7 @@ type RequestHandlerExtra struct {
 	//Sends a notification that relates to the current request being handled.
 	//
 	//This is used by certain transports to correctly associate related messages.
-	SendNotification func(notification types.NotificationInterface)
+	SendNotification func(ctx context.Context, notification types.NotificationInterface)
 	//Sends a request that relates to the current request being handled.
 	//
 	//This is used by certain transports to correctly associate related messages.

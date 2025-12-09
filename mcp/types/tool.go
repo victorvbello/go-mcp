@@ -2,7 +2,6 @@ package types
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/victorvbello/gomcp/mcp/methods"
 )
@@ -23,66 +22,8 @@ type Tool struct {
 	Annotations *ToolAnnotations `json:"annotations,omitempty"`
 	//See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
 	//for notes on _meta usage.
-	Metadata map[string]interface{} `json:"_meta,omitempty"`
-	//Attach additional properties, _meta is reserved by MCP
-	AdditionalProperties map[string]interface{} `json:"-"`
+	Meta `json:"_meta,omitempty"`
 }
-
-func (t *Tool) MarshalJSON() ([]byte, error) {
-	aux := struct {
-		BaseMetadata
-		Description  string                 `json:"description,omitempty"`
-		InputSchema  ToolInputSchema        `json:"inputSchema"`
-		OutputSchema ToolOutputSchema       `json:"outputSchema"`
-		Annotations  *ToolAnnotations       `json:"annotations,omitempty"`
-		Metadata     map[string]interface{} `json:"_meta,omitempty"`
-	}{
-		BaseMetadata: t.BaseMetadata,
-		Description:  t.Description,
-		InputSchema:  t.InputSchema,
-		OutputSchema: t.OutputSchema,
-		Annotations:  t.Annotations,
-		Metadata:     t.Metadata,
-	}
-	knownFields, err := json.Marshal(&aux)
-	if err != nil {
-		return nil, fmt.Errorf("marshal known fields: %w", err)
-	}
-	//Marshal knownFields to map
-	baseMap := make(map[string]interface{})
-	if err := json.Unmarshal(knownFields, &baseMap); err != nil {
-		return nil, fmt.Errorf("unmarshal known fields to map: %w", err)
-	}
-	for key, value := range t.AdditionalProperties {
-		if key == "_meta" {
-			continue //Skip the _meta key is reserved by MCP
-		}
-		baseMap[key] = value
-	}
-
-	return json.Marshal(baseMap)
-}
-
-func (t *Tool) UnmarshalJSON(data []byte) error {
-	raw := make(map[string]interface{})
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-	if _, ok := raw["_meta"]; !ok {
-		return nil //No _meta field, nothing to unmarshal
-	}
-	bm, err := json.Marshal(raw["_meta"])
-	if err != nil {
-		return fmt.Errorf("error marshaling _meta: %v", err)
-	}
-	if err := json.Unmarshal(bm, &t.Metadata); err != nil {
-		return fmt.Errorf("error unmarshaling into metadata: %v", err)
-	}
-	delete(raw, "_meta")
-	t.AdditionalProperties = raw
-	return nil
-}
-
 type ToolInputSchemaProperties struct {
 	Type        string `json:"type"`
 	Description string `json:"description"`
@@ -280,62 +221,6 @@ type CallToolRequestParams struct {
 	BaseRequestParams
 	Name      string                 `json:"name"`
 	Arguments map[string]interface{} `json:"arguments,omitempty"`
-}
-
-func (ctrP *CallToolRequestParams) MarshalJSON() ([]byte, error) {
-	//bridge struct to marshal known fields
-	aux := struct {
-		Name      string                 `json:"name"`
-		Arguments map[string]interface{} `json:"arguments,omitempty"`
-	}{
-		Name:      ctrP.Name,
-		Arguments: ctrP.Arguments,
-	}
-	knownFields, err := json.Marshal(&aux)
-	if err != nil {
-		return nil, fmt.Errorf("marshal known fields: %w", err)
-	}
-	//Marshal knownFields to map
-	baseMap := make(map[string]interface{})
-	if err := json.Unmarshal(knownFields, &baseMap); err != nil {
-		return nil, fmt.Errorf("unmarshal known fields to map: %w", err)
-	}
-	//Marshal base.BaseRequestParams
-	baseExtra, err := ctrP.BaseRequestParams.MarshalJSON()
-	if err != nil {
-		return nil, fmt.Errorf("marshal base fields: %w", err)
-	}
-	if err := json.Unmarshal(baseExtra, &baseMap); err != nil {
-		return nil, fmt.Errorf("unmarshal base fields: %w", err)
-	}
-	return json.Marshal(baseMap)
-}
-
-func (ctrP *CallToolRequestParams) UnmarshalJSON(data []byte) error {
-	aux := struct {
-		Name      string                 `json:"name"`
-		Arguments map[string]interface{} `json:"arguments,omitempty"`
-	}{}
-	if err := json.Unmarshal(data, &aux); err != nil {
-		return fmt.Errorf("json.Unmarshal: %v", err)
-	}
-	ctrP.Name = aux.Name
-	ctrP.Arguments = aux.Arguments
-
-	raw := make(map[string]interface{})
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return fmt.Errorf("error unmarshaling global data: %v", err)
-	}
-	delete(raw, "name")
-	delete(raw, "arguments")
-	bm, err := json.Marshal(raw)
-	if err != nil {
-		return fmt.Errorf("error marshaling rest of data: %v", err)
-	}
-	if err := ctrP.BaseRequestParams.UnmarshalJSON(bm); err != nil {
-		return fmt.Errorf("baseRequestParams.UnmarshalJSON: %w", err)
-	}
-	return nil
 }
 
 //An optional notification from the server to the client, informing it that the list of tools it offers has changed. This may be issued by servers without any previous subscription from the client.

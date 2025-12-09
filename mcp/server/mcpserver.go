@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/victorvbello/gomcp/mcp/shared"
@@ -182,14 +183,19 @@ func (mcps *McpServer) handlePromptCompletion(request *types.CompleteRequest, re
 			fmt.Sprintf("prompt %s disabled", ref.Name), nil)
 		return nil, err.ToError()
 	}
-	if prompt.ArgsSchema != nil {
+
+	if prompt.ArgsSchema == nil {
 		return &types.CompleteResult{}, nil
 	}
 	argSchema, okArg := prompt.ArgsSchema[request.Params.Argument.Name]
 	if !okArg {
 		return &types.CompleteResult{}, nil
 	}
-	suggestions := argSchema.Complete(request.Params.Argument.Value, request.Params.Context)
+	suggestions := []string{}
+	if argSchema.Complete == nil {
+		return mcps.createCompletionResult(suggestions), nil
+	}
+	suggestions = argSchema.Complete(request.Params.Argument.Value, request.Params.Context)
 	return mcps.createCompletionResult(suggestions), nil
 }
 
@@ -263,7 +269,7 @@ func (mcps *McpServer) setResourceRequestHandlers() error {
 				}
 				nR.Name = rr.Name
 				if rr.Metadata != nil {
-					nR.Metadata = rr.Metadata.Metadata
+					nR.Meta = rr.Metadata.Meta
 				}
 				resources = append(resources, nR)
 			}
@@ -288,7 +294,7 @@ func (mcps *McpServer) setResourceRequestHandlers() error {
 				for _, resource := range result.Resources {
 					newResource := resource
 					if template.Metadata != nil {
-						newResource.Metadata = template.Metadata.Metadata
+						newResource.Meta = template.Metadata.Meta
 					}
 					templateResources = append(templateResources, newResource)
 				}
@@ -306,11 +312,11 @@ func (mcps *McpServer) setResourceRequestHandlers() error {
 				uri := template.ResourceTemplate.GetUriTemplate()
 				nrt := types.ResourceTemplate{
 					URITemplate: uri,
-					Metadata:    template.Metadata.Metadata,
+					Meta:        template.Metadata.Meta,
 				}
 				nrt.Name = name
 				if template.Metadata != nil {
-					nrt.Metadata = template.Metadata.Metadata
+					nrt.Meta = template.Metadata.Meta
 				}
 				resourceTemplates = append(resourceTemplates, nrt)
 			}
@@ -336,7 +342,10 @@ func (mcps *McpServer) setResourceRequestHandlers() error {
 						fmt.Sprintf("resource %s disabled", uri), nil)
 					return nil, err.ToError()
 				}
-				return resource.ReadCallback(uri, extra)
+				if resource.ReadCallback != nil {
+					return resource.ReadCallback(uri, extra)
+				}
+				return new(types.EmptyResult), nil
 			}
 
 			//Then check templates
@@ -348,7 +357,10 @@ func (mcps *McpServer) setResourceRequestHandlers() error {
 					return nil, err.ToError()
 				}
 				if variables != nil {
-					return template.ReadCallback(uri, variables, extra)
+					if template.ReadCallback != nil {
+						return template.ReadCallback(uri, variables, extra)
+					}
+					return new(types.EmptyResult), nil
 				}
 			}
 
@@ -392,8 +404,9 @@ func (mcps *McpServer) setPromptRequestHandlers() error {
 
 	mcps.server.SetRequestHandler(types.NewListPromptsRequest(nil),
 		func(request types.RequestInterface, extra *shared.RequestHandlerExtra) (types.ResultInterface, error) {
-			var result *types.ListPromptsResult
-			var prompts []types.Prompt
+			result := &types.ListPromptsResult{
+				Prompts: []types.Prompt{},
+			}
 			for name, prompt := range mcps.registeredPrompts.GetAll() {
 				if !prompt.Enabled {
 					continue
@@ -404,9 +417,8 @@ func (mcps *McpServer) setPromptRequestHandlers() error {
 				}
 				np.Name = name
 				np.Title = prompt.Title
-				prompts = append(prompts, np)
+				result.Prompts = append(result.Prompts, np)
 			}
-			result.Prompts = append(result.Prompts, prompts...)
 			return result, nil
 		})
 
@@ -452,8 +464,12 @@ func (mcps *McpServer) setPromptRequestHandlers() error {
 func (mcps *McpServer) createCompletionResult(suggestions []string) *types.CompleteResult {
 	cr := new(types.CompleteResult)
 	hasMore := len(suggestions) > 100
+	safeSliceEnd := 100
+	if !hasMore {
+		safeSliceEnd = len(suggestions)
+	}
 	cr.Completion = types.CompleteResultCompletion{
-		Values:  suggestions[0:100],
+		Values:  suggestions[0:safeSliceEnd],
 		Total:   len(suggestions),
 		HasMore: &hasMore,
 	}
@@ -472,20 +488,27 @@ func (mcps *McpServer) promptArgumentsFromSchema(args map[string]PromptArgsSchem
 	return result
 }
 
+type RegisterResourceOpts struct {
+	Name     string
+	Uri      string
+	Meta     *ResourceMetadata
+	Callback ReadResourceCallback
+}
+
 //Registers a resource `name` at a fixed URI, which will use the given callback to respond to read requests.
 //name and uri are required
-func (mcps *McpServer) RegisterResource(name string, uri string, meta *ResourceMetadata, rcb ReadResourceCallback) (*RegisteredResource, error) {
-	if name == "" || uri == "" {
+func (mcps *McpServer) RegisterResource(opts RegisterResourceOpts) (*RegisteredResource, error) {
+	if opts.Name == "" || opts.Uri == "" {
 		return nil, fmt.Errorf("name and uri are required")
 	}
 
-	if _, ok := mcps.registeredResources.Get(uri); !ok {
-		return nil, fmt.Errorf("resource %s is already registered", uri)
+	if _, ok := mcps.registeredResources.Get(opts.Uri); ok {
+		return nil, fmt.Errorf("resource %s is already registered", opts.Uri)
 	}
 	result := RegisteredResource{
-		Name:         name,
-		Metadata:     meta,
-		ReadCallback: rcb,
+		Name:         opts.Name,
+		Metadata:     opts.Meta,
+		ReadCallback: opts.Callback,
 		Enabled:      true,
 	}
 	result.Disable = func() {
@@ -497,14 +520,14 @@ func (mcps *McpServer) RegisterResource(name string, uri string, meta *ResourceM
 	result.Remove = func() {
 		result.Update(RegisteredResourceUpdateOpts{URI: ""})
 	}
-	if meta != nil {
-		result.Title = meta.Title
+	if opts.Meta != nil {
+		result.Title = opts.Meta.Title
 	}
 	result.Update = func(updates RegisteredResourceUpdateOpts) error {
 		if updates.URI == "" {
-			mcps.registeredResources.Delete(uri)
+			mcps.registeredResources.Delete(opts.Uri)
 		}
-		if updates.URI != uri {
+		if updates.URI != opts.Uri {
 			mcps.registeredResources.Set(updates.URI, result)
 		}
 		if updates.Name != "" {
@@ -527,7 +550,7 @@ func (mcps *McpServer) RegisterResource(name string, uri string, meta *ResourceM
 		}
 		return nil
 	}
-	mcps.registeredResources.Set(uri, result)
+	mcps.registeredResources.Set(opts.Uri, result)
 	if err := mcps.setResourceRequestHandlers(); err != nil {
 		return nil, fmt.Errorf("mcps.setResourceRequestHandlers, %v", err)
 	}
@@ -537,21 +560,29 @@ func (mcps *McpServer) RegisterResource(name string, uri string, meta *ResourceM
 	return &result, nil
 }
 
+type RegisterResourceTemplateOpts struct {
+	Name     string
+	Title    string
+	Template ResourceTemplate
+	Meta     *ResourceMetadata
+	Callback ReadResourceTemplateCallback
+}
+
 //Registers a resource `name` with a template pattern, which will use the given callback to respond to read requests.
 //name is required
-func (mcps *McpServer) RegisterResourceTemplate(name string, title string, temp ResourceTemplate, meta *ResourceMetadata, rcb ReadResourceTemplateCallback) (*RegisteredResourceTemplate, error) {
-	if name == "" {
+func (mcps *McpServer) RegisterResourceTemplate(opts RegisterResourceTemplateOpts) (*RegisteredResourceTemplate, error) {
+	if opts.Name == "" {
 		return nil, fmt.Errorf("name is required")
 	}
 
-	if _, ok := mcps.registeredResourceTemplates.Get(name); !ok {
-		return nil, fmt.Errorf("resource template %s is already registered", name)
+	if _, ok := mcps.registeredResourceTemplates.Get(opts.Name); ok {
+		return nil, fmt.Errorf("resource template %s is already registered", opts.Name)
 	}
 	result := RegisteredResourceTemplate{
-		ResourceTemplate: temp,
-		Title:            title,
-		Metadata:         meta,
-		ReadCallback:     rcb,
+		ResourceTemplate: opts.Template,
+		Title:            opts.Title,
+		Metadata:         opts.Meta,
+		ReadCallback:     opts.Callback,
 		Enabled:          true,
 	}
 	result.Disable = func() {
@@ -565,9 +596,9 @@ func (mcps *McpServer) RegisterResourceTemplate(name string, title string, temp 
 	}
 	result.Update = func(updates RegisteredResourceTemplateUpdateOpts) error {
 		if updates.Name == "" {
-			mcps.registeredResourceTemplates.Delete(name)
+			mcps.registeredResourceTemplates.Delete(opts.Name)
 		}
-		if updates.Name != name {
+		if updates.Name != opts.Name {
 			mcps.registeredResourceTemplates.Set(updates.Name, result)
 		}
 		if updates.Title != "" {
@@ -590,7 +621,7 @@ func (mcps *McpServer) RegisterResourceTemplate(name string, title string, temp 
 		}
 		return nil
 	}
-	mcps.registeredResourceTemplates.Set(name, result)
+	mcps.registeredResourceTemplates.Set(opts.Name, result)
 	if err := mcps.setResourceRequestHandlers(); err != nil {
 		return nil, fmt.Errorf("mcps.setResourceRequestHandlers, %v", err)
 	}
@@ -600,8 +631,6 @@ func (mcps *McpServer) RegisterResourceTemplate(name string, title string, temp 
 	return &result, nil
 }
 
-//Registers a tool with a config object and callback.
-//name is required
 type RegisterToolOpts struct {
 	Name         string
 	Title        string
@@ -612,6 +641,8 @@ type RegisterToolOpts struct {
 	Callback     ToolCallback
 }
 
+//Registers a tool with a config object and callback.
+//name is required
 func (mcps *McpServer) RegisterTool(opts RegisterToolOpts) (*RegisteredTool, error) {
 	if opts.Name == "" {
 		return nil, fmt.Errorf("name is required")
@@ -681,20 +712,29 @@ func (mcps *McpServer) RegisterTool(opts RegisterToolOpts) (*RegisteredTool, err
 	return &result, nil
 }
 
+type RegisterPromptOpts struct {
+	Name        string
+	Title       string
+	Description string
+	Arguments   map[string]PromptArgsSchemaField
+	Callback    PromptCallback
+}
+
 //Registers a prompt with a config object and callback.
 //name is required
-func (mcps *McpServer) RegisterPrompt(name string, title string, des string, argSch map[string]PromptArgsSchemaField, cb PromptCallback) (*RegisteredPrompt, error) {
-	if name == "" {
+func (mcps *McpServer) RegisterPrompt(opts RegisterPromptOpts) (*RegisteredPrompt, error) {
+	if opts.Name == "" {
 		return nil, fmt.Errorf("name is required")
 	}
-	if _, ok := mcps.registeredPrompts.Get(name); !ok {
-		return nil, fmt.Errorf("prompt %s is already registered", name)
+	if _, ok := mcps.registeredPrompts.Get(opts.Name); ok {
+		return nil, fmt.Errorf("prompt %s is already registered", opts.Name)
 	}
 	result := RegisteredPrompt{
-		Title:       title,
-		Description: des,
-		ArgsSchema:  argSch,
-		Callback:    cb,
+		Title:       opts.Title,
+		Description: opts.Description,
+		Enabled:     true,
+		ArgsSchema:  opts.Arguments,
+		Callback:    opts.Callback,
 	}
 	result.Disable = func() {
 		result.Update(RegisteredPromptUpdateOpts{Enabled: false})
@@ -707,9 +747,9 @@ func (mcps *McpServer) RegisterPrompt(name string, title string, des string, arg
 	}
 	result.Update = func(updates RegisteredPromptUpdateOpts) error {
 		if updates.Name == "" {
-			mcps.registeredPrompts.Delete(name)
+			mcps.registeredPrompts.Delete(opts.Name)
 		}
-		if updates.Name != name {
+		if updates.Name != opts.Name {
 			mcps.registeredPrompts.Set(updates.Name, result)
 		}
 		if updates.Title != "" {
@@ -733,7 +773,7 @@ func (mcps *McpServer) RegisterPrompt(name string, title string, des string, arg
 		}
 		return nil
 	}
-
+	mcps.registeredPrompts.Set(opts.Name, result)
 	if err := mcps.setPromptRequestHandlers(); err != nil {
 		return nil, fmt.Errorf("mcps.setPromptRequestHandlers, %v", err)
 	}
@@ -785,9 +825,9 @@ func (mcps *McpServer) SendPromptListChanged() error {
 //Attaches to the given transport, starts it, and starts listening for messages.
 //
 //The `server` object assumes ownership of the Transport, replacing any callbacks that have already been set, and expects that it is the only user of the Transport instance going forward.
-func (mcps *McpServer) Connect(transport shared.Transport) error {
+func (mcps *McpServer) Connect(ctx context.Context, transport shared.Transport) error {
 	connError := mcps.wrapperOnErrorServer(func() {
-		mcps.server.Protocol.Connect(transport)
+		mcps.server.Protocol.Connect(ctx, transport)
 	})
 	return connError
 }

@@ -44,6 +44,14 @@ type ImageContent struct {
 
 func (i *ImageContent) TypeOfContent() string { return IMAGE_CONTENT_TYPE }
 
+func NewImageContent(Data, MIMEType string) *ImageContent {
+	c := new(ImageContent)
+	c.Type = "image"
+	c.Data = Data
+	c.MIMEType = MIMEType
+	return c
+}
+
 //Audio provided to or from an LLM.
 type AudioContent struct {
 	//type: "audio"
@@ -56,6 +64,14 @@ type AudioContent struct {
 
 func (a *AudioContent) TypeOfContent() string { return AUDIO_CONTENT_TYPE }
 
+func NewAudioContent(Data, MIMEType string) *AudioContent {
+	c := new(AudioContent)
+	c.Type = "audio"
+	c.Data = Data
+	c.MIMEType = MIMEType
+	return c
+}
+
 //The contents of a resource, embedded into a prompt or tool call result.
 //
 //It is up to the client how best to render embedded resources for the benefit
@@ -67,3 +83,10 @@ type EmbeddedResource struct {
 }
 
 func (e *EmbeddedResource) TypeOfContent() string { return EMBEDDED_RESOURCE_CONTENT_TYPE }
+
+func NewEmbeddedResource(Resource ResourceContents) *EmbeddedResource {
+	c := new(EmbeddedResource)
+	c.Type = "resource"
+	c.Resource = Resource
+	return c
+}

@@ -1,9 +1,6 @@
 package types
 
 import (
-	"encoding/json"
-	"fmt"
-
 	"github.com/victorvbello/gomcp/mcp/methods"
 	"github.com/victorvbello/gomcp/mcp/utils"
 )
@@ -30,44 +27,7 @@ type Resource struct {
 	MIMEType string `json:"mimeType,omitempty"`
 	//See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
 	//for notes on _meta usage.
-	Metadata map[string]interface{} `json:"_meta,omitempty"`
-	//Attach additional properties, _meta is reserved by MCP
-	AdditionalProperties map[string]interface{} `json:"-"`
-}
-
-func (r *Resource) MarshalJSON() ([]byte, error) {
-	raw := make(map[string]interface{})
-	if r.Metadata != nil {
-		raw["_meta"] = r.Metadata
-	}
-	for key, value := range r.AdditionalProperties {
-		if key == "_meta" {
-			continue //Skip the _meta key is reserved by MCP
-		}
-		raw[key] = value
-	}
-
-	return json.Marshal(raw)
-}
-
-func (r *Resource) UnmarshalJSON(data []byte) error {
-	raw := make(map[string]interface{})
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-	if _, ok := raw["_meta"]; !ok {
-		return nil //No _meta field, nothing to unmarshal
-	}
-	bm, err := json.Marshal(raw["_meta"])
-	if err != nil {
-		return fmt.Errorf("error marshaling _meta: %v", err)
-	}
-	if err := json.Unmarshal(bm, &r.Metadata); err != nil {
-		return fmt.Errorf("error unmarshaling into metadata: %v", err)
-	}
-	delete(raw, "_meta")
-	r.AdditionalProperties = raw
-	return nil
+	Meta `json:"_meta,omitempty"`
 }
 
 //A template description for resources available on the server.
@@ -83,44 +43,7 @@ type ResourceTemplate struct {
 	MIMEType string `json:"mimeType,omitempty"`
 	//See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
 	//for notes on _meta usage.
-	Metadata map[string]interface{} `json:"_meta,omitempty"`
-	//Attach additional properties, _meta is reserved by MCP
-	AdditionalProperties map[string]interface{} `json:"-"`
-}
-
-func (rt *ResourceTemplate) MarshalJSON() ([]byte, error) {
-	raw := make(map[string]interface{})
-	if rt.Metadata != nil {
-		raw["_meta"] = rt.Metadata
-	}
-	for key, value := range rt.AdditionalProperties {
-		if key == "_meta" {
-			continue //Skip the _meta key is reserved by MCP
-		}
-		raw[key] = value
-	}
-
-	return json.Marshal(raw)
-}
-
-func (rt *ResourceTemplate) UnmarshalJSON(data []byte) error {
-	raw := make(map[string]interface{})
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-	if _, ok := raw["_meta"]; !ok {
-		return nil //No _meta field, nothing to unmarshal
-	}
-	bm, err := json.Marshal(raw["_meta"])
-	if err != nil {
-		return fmt.Errorf("error marshaling _meta: %v", err)
-	}
-	if err := json.Unmarshal(bm, &rt.Metadata); err != nil {
-		return fmt.Errorf("error unmarshaling into metadata: %v", err)
-	}
-	delete(raw, "_meta")
-	rt.AdditionalProperties = raw
-	return nil
+	Meta `json:"_meta,omitempty"`
 }
 
 //The contents of a specific resource or sub-resource.
@@ -209,57 +132,6 @@ type ResourceUpdatedNotificationParams struct {
 	URI string `json:"uri"`
 }
 
-func (runp *ResourceUpdatedNotificationParams) MarshalJSON() ([]byte, error) {
-	//bridge struct to marshal known fields
-	aux := struct {
-		URI string `json:"uri"`
-	}{
-		URI: runp.URI,
-	}
-	knownFields, err := json.Marshal(&aux)
-	if err != nil {
-		return nil, fmt.Errorf("marshal known fields: %w", err)
-	}
-	//Marshal knownFields to map
-	baseMap := make(map[string]interface{})
-	if err := json.Unmarshal(knownFields, &baseMap); err != nil {
-		return nil, fmt.Errorf("unmarshal known fields to map: %w", err)
-	}
-	//Marshal base.BaseNotificationParams
-	baseExtra, err := runp.BaseNotificationParams.MarshalJSON()
-	if err != nil {
-		return nil, fmt.Errorf("marshal base fields: %w", err)
-	}
-	if err := json.Unmarshal(baseExtra, &baseMap); err != nil {
-		return nil, fmt.Errorf("unmarshal base fields: %w", err)
-	}
-	return json.Marshal(baseMap)
-}
-
-func (runp *ResourceUpdatedNotificationParams) UnmarshalJSON(data []byte) error {
-	aux := struct {
-		URI string `json:"uri"`
-	}{}
-	if err := json.Unmarshal(data, &aux); err != nil {
-		return fmt.Errorf("json.Unmarshal: %v", err)
-	}
-	runp.URI = aux.URI
-
-	raw := make(map[string]interface{})
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return fmt.Errorf("error unmarshaling global data: %v", err)
-	}
-	delete(raw, "uri")
-	bm, err := json.Marshal(raw)
-	if err != nil {
-		return fmt.Errorf("error marshaling rest of data: %v", err)
-	}
-	if err := runp.BaseNotificationParams.UnmarshalJSON(bm); err != nil {
-		return fmt.Errorf("BaseNotificationParams.UnmarshalJSON: %w", err)
-	}
-	return nil
-}
-
 //Sent from the client to request a list of resources the server has.
 //
 //Only method: METHOD_REQUEST_LIST_RESOURCES
@@ -303,7 +175,7 @@ func (lt *ListResourceTemplatesRequest) GetRequest() Request {
 
 func NewListResourceTemplatesRequest(params *PaginatedRequestParams) *ListResourceTemplatesRequest {
 	lrtr := new(ListResourceTemplatesRequest)
-	lrtr.Method = methods.METHOD_REQUEST_LIST_RESOURCES
+	lrtr.Method = methods.METHOD_REQUEST_TEMPLATES_LIST_RESOURCES
 	lrtr.Params = params
 	return lrtr
 }
@@ -339,57 +211,6 @@ type ReadResourceRequestParams struct {
 	BaseRequestParams
 	//The URI of the resource to read. The URI can use any protocol; it is up to the server how to interpret it.
 	URI string `json:"uri"`
-}
-
-func (rrrp *ReadResourceRequestParams) MarshalJSON() ([]byte, error) {
-	//bridge struct to marshal known fields
-	aux := struct {
-		URI string `json:"uri"`
-	}{
-		URI: rrrp.URI,
-	}
-	knownFields, err := json.Marshal(&aux)
-	if err != nil {
-		return nil, fmt.Errorf("marshal known fields: %w", err)
-	}
-	//Marshal knownFields to map
-	baseMap := make(map[string]interface{})
-	if err := json.Unmarshal(knownFields, &baseMap); err != nil {
-		return nil, fmt.Errorf("unmarshal known fields to map: %w", err)
-	}
-	//Marshal base.BaseRequestParams
-	baseExtra, err := rrrp.BaseRequestParams.MarshalJSON()
-	if err != nil {
-		return nil, fmt.Errorf("marshal base fields: %w", err)
-	}
-	if err := json.Unmarshal(baseExtra, &baseMap); err != nil {
-		return nil, fmt.Errorf("unmarshal base fields: %w", err)
-	}
-	return json.Marshal(baseMap)
-}
-
-func (rrrp *ReadResourceRequestParams) UnmarshalJSON(data []byte) error {
-	aux := struct {
-		URI string `json:"uri"`
-	}{}
-	if err := json.Unmarshal(data, &aux); err != nil {
-		return fmt.Errorf("json.Unmarshal: %v", err)
-	}
-	rrrp.URI = aux.URI
-
-	raw := make(map[string]interface{})
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return fmt.Errorf("error unmarshaling global data: %v", err)
-	}
-	delete(raw, "uri")
-	bm, err := json.Marshal(raw)
-	if err != nil {
-		return fmt.Errorf("error marshaling rest of data: %v", err)
-	}
-	if err := rrrp.BaseRequestParams.UnmarshalJSON(bm); err != nil {
-		return fmt.Errorf("baseRequestParams.UnmarshalJSON: %w", err)
-	}
-	return nil
 }
 
 //The server's response to a resources/list request from the client.

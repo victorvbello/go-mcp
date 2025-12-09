@@ -25,35 +25,6 @@ func (cmr *CreateMessageRequest) GetRequest() Request {
 	return cmr.Request
 }
 
-func (cmr *CreateMessageRequest) MarshalJSON() ([]byte, error) {
-	//bridge struct to marshal known fields
-	aux := struct {
-		Request
-	}{
-		Request: cmr.Request,
-	}
-	knownFields, err := json.Marshal(&aux)
-	if err != nil {
-		return nil, fmt.Errorf("marshal known fields: %w", err)
-	}
-	//Marshal knownFields to map
-	baseMap := make(map[string]interface{})
-	if err := json.Unmarshal(knownFields, &baseMap); err != nil {
-		return nil, fmt.Errorf("unmarshal known fields to map: %w", err)
-	}
-	//Marshal CreateMessageParams
-	params, err := cmr.CreateMessageParams.MarshalJSON()
-	if err != nil {
-		return nil, fmt.Errorf("marshal CreateMessageParams fields: %w", err)
-	}
-	paramsMap := make(map[string]interface{})
-	if err := json.Unmarshal(params, &paramsMap); err != nil {
-		return nil, fmt.Errorf("unmarshal params fields: %w", err)
-	}
-	baseMap["params"] = paramsMap
-	return json.Marshal(baseMap)
-}
-
 func NewCreateMessageRequest(params *CreateMessageParams) *CreateMessageRequest {
 	cmr := new(CreateMessageRequest)
 	cmr.Method = methods.METHOD_SAMPLING_CREATE_MESSAGE
@@ -97,97 +68,50 @@ type CreateMessageParams struct {
 	Metadata interface{} `json:"metadata,omitempty"`
 }
 
-func (cmp *CreateMessageParams) MarshalJSON() ([]byte, error) {
-	//bridge struct to marshal known fields
-	aux := struct {
-		Messages         []SamplingMessage `json:"messages"`
-		ModelPreferences *ModelPreferences `json:"modelPreferences,omitempty"`
-		SystemPrompt     string            `json:"systemPrompt,omitempty"`
-		IncludeContext   string            `json:"includeContext,omitempty"`
-		Temperature      float64           `json:"temperature,omitempty"`
-		MaxTokens        int               `json:"maxTokens"`
-		StopSequences    []string          `json:"stopSequences,omitempty"`
-		Metadata         interface{}       `json:"metadata,omitempty"`
-	}{
-		Messages:         cmp.Messages,
-		ModelPreferences: cmp.ModelPreferences,
-		SystemPrompt:     cmp.SystemPrompt,
-		IncludeContext:   cmp.IncludeContext,
-		Temperature:      cmp.Temperature,
-		MaxTokens:        cmp.MaxTokens,
-		StopSequences:    cmp.StopSequences,
-		Metadata:         cmp.Metadata,
-	}
-	knownFields, err := json.Marshal(&aux)
-	if err != nil {
-		return nil, fmt.Errorf("marshal known fields: %w", err)
-	}
-	//Marshal knownFields to map
-	baseMap := make(map[string]interface{})
-	if err := json.Unmarshal(knownFields, &baseMap); err != nil {
-		return nil, fmt.Errorf("unmarshal known fields to map: %w", err)
-	}
-	//Marshal base.BaseRequestParams
-	baseExtra, err := cmp.BaseRequestParams.MarshalJSON()
-	if err != nil {
-		return nil, fmt.Errorf("marshal base fields: %w", err)
-	}
-	if err := json.Unmarshal(baseExtra, &baseMap); err != nil {
-		return nil, fmt.Errorf("unmarshal base fields: %w", err)
-	}
-	return json.Marshal(baseMap)
-}
-
-func (cmp *CreateMessageParams) UnmarshalJSON(data []byte) error {
-	aux := struct {
-		Messages         []SamplingMessage `json:"messages"`
-		ModelPreferences *ModelPreferences `json:"modelPreferences,omitempty"`
-		SystemPrompt     string            `json:"systemPrompt,omitempty"`
-		IncludeContext   string            `json:"includeContext,omitempty"`
-		Temperature      float64           `json:"temperature,omitempty"`
-		MaxTokens        int               `json:"maxTokens"`
-		StopSequences    []string          `json:"stopSequences,omitempty"`
-		Metadata         interface{}       `json:"metadata,omitempty"`
-	}{}
-	if err := json.Unmarshal(data, &aux); err != nil {
-		return fmt.Errorf("json.Unmarshal: %v", err)
-	}
-	aux.Messages = cmp.Messages
-	aux.ModelPreferences = cmp.ModelPreferences
-	aux.SystemPrompt = cmp.SystemPrompt
-	aux.IncludeContext = cmp.IncludeContext
-	aux.Temperature = cmp.Temperature
-	aux.MaxTokens = cmp.MaxTokens
-	aux.StopSequences = cmp.StopSequences
-	aux.Metadata = cmp.Metadata
-
-	raw := make(map[string]interface{})
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return fmt.Errorf("error unmarshaling global data: %v", err)
-	}
-	delete(raw, "messages")
-	delete(raw, "modelPreferences")
-	delete(raw, "systemPrompt")
-	delete(raw, "includeContext")
-	delete(raw, "temperature")
-	delete(raw, "maxTokens")
-	delete(raw, "stopSequences")
-	delete(raw, "metadata")
-	bm, err := json.Marshal(raw)
-	if err != nil {
-		return fmt.Errorf("error marshaling rest of data: %v", err)
-	}
-	if err := cmp.BaseRequestParams.UnmarshalJSON(bm); err != nil {
-		return fmt.Errorf("baseRequestParams.UnmarshalJSON: %w", err)
-	}
-	return nil
-}
-
 //Describes a message issued to or received from an LLM API.
 type SamplingMessage struct {
 	Role Role `json:"role"`
 	//Could be TextContent/ImageContent/AudioContent
 	Content Content `json:"content"`
+}
+
+func (sm *SamplingMessage) UnmarshalJSON(data []byte) error {
+	var meta struct {
+		Role    Role            `json:"role"`
+		Content json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return fmt.Errorf("error unmarshaling global meta: %v", err)
+	}
+	sm.Role = meta.Role
+	contentDataMap := make(map[string]interface{})
+	if err := json.Unmarshal(meta.Content, &contentDataMap); err != nil {
+		return fmt.Errorf("error unmarshaling global data in map: %v", err)
+	}
+
+	var c Content
+	var contentFactories = map[string]func() Content{
+		"text":     func() Content { return new(TextContent) },
+		"image":    func() Content { return new(ImageContent) },
+		"audio":    func() Content { return new(AudioContent) },
+		"resource": func() Content { return new(EmbeddedResource) },
+	}
+
+	for key, builder := range contentFactories {
+		if _, ok := contentDataMap[key]; ok {
+			c = builder()
+			break
+		}
+	}
+	if c == nil {
+		c = new(TextContent)
+	}
+
+	if err := json.Unmarshal(meta.Content, &c); err != nil {
+		return fmt.Errorf("error unmarshaling err: %v", err)
+	}
+	sm.Content = c
+	return nil
 }
 
 //The server's preferences for model selection, requested of the client during sampling.

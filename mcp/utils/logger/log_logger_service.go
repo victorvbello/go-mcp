@@ -13,22 +13,29 @@ type Logger struct {
 
 func NewLoggerService() LogService {
 	lg := &Logger{
-		Log:    log.New(os.Stdout, "LoggerService: ", log.Ldate|log.Ltime),
+		Log:    log.New(os.Stderr, "LoggerService: ", log.Ldate|log.Ltime),
 		Fields: make(map[string]interface{}),
 	}
 	return lg
 }
 
-func (lg *Logger) fieldsToString() string {
+func (lg *Logger) fieldsToString(inlineFields LogFields) string {
 	var result string
+	finalFields := make(LogFields)
 	for k, v := range lg.Fields {
+		finalFields[k] = v
+	}
+	for k, v := range inlineFields {
+		finalFields[k] = v
+	}
+	for k, v := range finalFields {
 		result += fmt.Sprintf("%s: %v ", k, v)
 	}
 	return result
 }
 
 func (lg *Logger) formatLog(flag string, fields LogFields, msg string) string {
-	data := lg.fieldsToString()
+	data := lg.fieldsToString(fields)
 	step := ""
 	if data != "" {
 		step = "-"

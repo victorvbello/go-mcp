@@ -58,66 +58,44 @@ func (msg RawMessage) ToJSONRPCRequest() (*JSONRPCRequest, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error unmarshalling %s request: %v", method, err)
 	}
+	var r RequestInterface
 	switch req.GetRequest().Method {
 	case methods.METHOD_REQUEST_INITIALIZE:
-		var ri InitializeRequest
-		err = json.Unmarshal(b, &ri)
-		if err != nil {
-			return nil, fmt.Errorf("error unmarshalling %s request: %v", method, err)
-		}
-		req.RequestInterface = &ri
+		r = new(InitializeRequest)
 	case methods.METHOD_REQUEST_PING:
-		var p PingRequest
-		err = json.Unmarshal(b, &p)
-		if err != nil {
-			return nil, fmt.Errorf("error unmarshalling %s request: %v", method, err)
-		}
-		req.RequestInterface = &p
-		break
+		r = new(PingRequest)
 	case methods.METHOD_REQUEST_LIST_RESOURCES:
-		break
+		r = new(ListResourcesRequest)
 	case methods.METHOD_REQUEST_TEMPLATES_LIST_RESOURCES:
-		break
+		r = new(ListResourceTemplatesRequest)
 	case methods.METHOD_REQUEST_READ_RESOURCES:
-		break
+		r = new(ReadResourceRequest)
 	case methods.METHOD_REQUEST_SUBSCRIBE_RESOURCES:
-		break
+		r = new(SubscribeRequest)
 	case methods.METHOD_REQUEST_UNSUBSCRIBE_RESOURCES:
-		break
+		r = new(UnsubscribeRequest)
 	case methods.METHOD_REQUEST_LIST_PROMPTS:
-		break
+		r = new(ListPromptsRequest)
 	case methods.METHOD_REQUEST_GET_PROMPTS:
-		break
+		r = new(GetPromptRequest)
 	case methods.METHOD_REQUEST_LIST_TOOLS:
-		var ltr ListToolsRequest
-		err = json.Unmarshal(b, &ltr)
-		if err != nil {
-			return nil, fmt.Errorf("error unmarshalling %s request: %v", method, err)
-		}
-		req.RequestInterface = &ltr
+		r = new(ListToolsRequest)
 	case methods.METHOD_REQUEST_CALL_TOOLS:
-		var ctr CallToolRequest
-		err = json.Unmarshal(b, &ctr)
-		if err != nil {
-			return nil, fmt.Errorf("error unmarshalling %s request: %v", method, err)
-		}
-		req.RequestInterface = &ctr
-		break
+		r = new(CallToolRequest)
 	case methods.METHOD_REQUEST_SET_LEVEL_LOGGING:
-		break
+		r = new(SetLevelRequest)
 	case methods.METHOD_SAMPLING_CREATE_MESSAGE:
-		var cmr CreateMessageRequest
-		err = json.Unmarshal(b, &cmr)
-		if err != nil {
-			return nil, fmt.Errorf("error unmarshalling %s request: %v", method, err)
-		}
-		req.RequestInterface = &cmr
-		break
+		r = new(CreateMessageRequest)
 	case methods.METHOD_AUTOCOMPLETE_COMPLETE:
-		break
+		r = new(CompleteRequest)
 	case methods.METHOD_LIST_ROOTS:
-		break
+		r = new(ListRootsRequest)
 	}
+	if err := json.Unmarshal(b, &r); err != nil {
+		return nil, fmt.Errorf("error unmarshaling method: %s, err: %v", req.GetRequest().Method, err)
+	}
+	req.RequestInterface = r
+
 	return &req, nil
 }
 
@@ -138,31 +116,32 @@ func (msg RawMessage) ToJSONRPCNotification() (*JSONRPCNotification, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error unmarshalling %s notification: %v", method, err)
 	}
+	var n NotificationInterface
 	switch req.GetNotification().Method {
 	case methods.METHOD_NOTIFICATION_CANCELLED:
-		break
+		n = new(CancelledNotification)
 	case methods.METHOD_NOTIFICATION_INITIALIZED:
-		var in InitializedNotification
-		err = json.Unmarshal(b, &in)
-		if err != nil {
-			return nil, fmt.Errorf("error unmarshalling %s notification: %v", method, err)
-		}
-		req.NotificationInterface = &in
+		n = new(InitializedNotification)
 	case methods.METHOD_NOTIFICATION_PROGRESS:
-		break
+		n = new(ProgressNotification)
 	case methods.METHOD_NOTIFICATION_RESOURCES_LIST_CHANGED:
-		break
+		n = new(ResourceListChangedNotification)
 	case methods.METHOD_NOTIFICATION_RESOURCES_UPDATED:
-		break
+		n = new(ResourceUpdatedNotification)
 	case methods.METHOD_NOTIFICATION_PROMPTS_LIST_CHANGED:
-		break
+		n = new(PromptListChangedNotification)
 	case methods.METHOD_NOTIFICATION_TOOLS_LIST_CHANGED:
-		break
+		n = new(ToolListChangedNotification)
 	case methods.METHOD_NOTIFICATION_MESSAGE:
-		break
+		n = new(LoggingMessageNotification)
 	case methods.METHOD_NOTIFICATION_ROOTS_LIST_CHANGED:
-		break
+		n = new(RootsListChangedNotification)
 	}
+	err = json.Unmarshal(b, &n)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshalling %s notification: %v", method, err)
+	}
+	req.NotificationInterface = n
 	return &req, nil
 }
 

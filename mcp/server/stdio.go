@@ -90,7 +90,9 @@ func (st *StdioServerTransport) Start() error {
 					st.onError(fmt.Errorf("st.stdin.Read %v", err))
 					return
 				}
-				st.onData(buf[:n])
+				go func() {
+					st.onData(buf[:n])
+				}()
 			}
 		}
 	}()
@@ -176,7 +178,7 @@ func (st *StdioServerTransport) SetProtocolVersion(version string) {
 
 //Return the session ID
 func (st *StdioServerTransport) GetSessionID() string {
-	return ""
+	return "mcp-session-id-stdio"
 }
 
 //Set this if globalOnClose is needed, this must be executed into OnClose Func first

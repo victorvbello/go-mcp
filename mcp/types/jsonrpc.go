@@ -155,7 +155,7 @@ func (jr *JSONRPCRequest) MarshalJSON() ([]byte, error) {
 	case REQUEST_REQUEST_INTERFACE_TYPE:
 		break
 	case CREATE_MESSAGE_REQUEST_REQUEST_INTERFACE_TYPE:
-		reqInB, err = jr.RequestInterface.(*CreateMessageRequest).MarshalJSON()
+		reqInB, err = json.Marshal(jr.RequestInterface.(*CreateMessageRequest))
 		if err != nil {
 			return nil, fmt.Errorf("marshal METHOD_SAMPLING_CREATE_MESSAGE fields: %w", err)
 		}
@@ -316,6 +316,9 @@ func (jr *JSONRPCResponse) MarshalJSON() ([]byte, error) {
 	if err := json.Unmarshal(knownFields, &baseMap); err != nil {
 		return nil, fmt.Errorf("unmarshal known fields to map: %w", err)
 	}
+	if jr.Result == nil {
+		return json.Marshal(baseMap)
+	}
 	//Process ResultInterface
 	jmTyp := jr.Result.TypeOfResultInterface()
 	switch jmTyp {
@@ -396,53 +399,50 @@ func (jr *JSONRPCResponse) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(baseMap)
 }
+
 func (jr *JSONRPCResponse) UnmarshalJSON(data []byte) error {
 	var meta struct {
-		JSONRPC string    `json:"jsonrpc"`
-		ID      RequestID `json:"id"`
+		JSONRPC string          `json:"jsonrpc"`
+		ID      RequestID       `json:"id"`
+		Result  json.RawMessage `json:"result"`
 	}
 	if err := json.Unmarshal(data, &meta); err != nil {
 		return fmt.Errorf("error unmarshaling global meta: %v", err)
 	}
 	jr.JSONRPC = meta.JSONRPC
 	jr.ID = meta.ID
-	dataMap := make(map[string]interface{})
-	if err := json.Unmarshal(data, &dataMap); err != nil {
+	resultDataMap := make(map[string]interface{})
+	if err := json.Unmarshal(meta.Result, &resultDataMap); err != nil {
 		return fmt.Errorf("error unmarshaling global data in map: %v", err)
 	}
 
 	var r ResultInterface
-	if _, ok := dataMap["prompts"]; ok {
-		r = new(ListPromptsResult)
-	} else if _, ok := dataMap["resources"]; ok {
-		r = new(ListResourcesResult)
-	} else if _, ok := dataMap["resourceTemplates"]; ok {
-		r = new(ListResourceTemplatesResult)
-	} else if _, ok := dataMap["completion"]; ok {
-		r = new(CompleteResult)
-	} else if _, ok := dataMap["tools"]; ok {
-		r = new(ListToolsResult)
-	} else if _, ok := dataMap["completion"]; ok {
-		r = new(CompleteResult)
-	} else if _, ok := dataMap["messages"]; ok {
-		r = new(GetPromptResult)
-	} else if _, ok := dataMap["contents"]; ok {
-		r = new(ReadResourceResult)
-	} else if _, ok := dataMap["protocolVersion"]; ok {
-		r = new(InitializeResult)
-	} else if _, ok := dataMap["nextCursor"]; ok {
-		r = new(PaginatedResult)
-	} else if _, ok := dataMap["roots"]; ok {
-		r = new(ListRootsResult)
-	} else if _, ok := dataMap["model"]; ok {
-		r = new(CreateMessageResult)
-	} else if _, ok := dataMap["content"]; ok {
-		r = new(CallToolResult)
-	} else {
+	var resultFactories = map[string]func() ResultInterface{
+		"prompts":           func() ResultInterface { return new(ListPromptsResult) },
+		"resources":         func() ResultInterface { return new(ListResourcesResult) },
+		"resourceTemplates": func() ResultInterface { return new(ListResourceTemplatesResult) },
+		"completion":        func() ResultInterface { return new(CompleteResult) },
+		"tools":             func() ResultInterface { return new(ListToolsResult) },
+		"messages":          func() ResultInterface { return new(GetPromptResult) },
+		"contents":          func() ResultInterface { return new(ReadResourceResult) },
+		"protocolVersion":   func() ResultInterface { return new(InitializeResult) },
+		"nextCursor":        func() ResultInterface { return new(PaginatedResult) },
+		"roots":             func() ResultInterface { return new(ListRootsResult) },
+		"model":             func() ResultInterface { return new(CreateMessageResult) },
+		"content":           func() ResultInterface { return new(CallToolResult) },
+	}
+
+	for key, builder := range resultFactories {
+		if _, ok := resultDataMap[key]; ok {
+			r = builder()
+			break
+		}
+	}
+	if r == nil {
 		r = new(EmptyResult)
 	}
 
-	if err := json.Unmarshal(data, &r); err != nil {
+	if err := json.Unmarshal(meta.Result, &r); err != nil {
 		return fmt.Errorf("error unmarshaling err: %v", err)
 	}
 	jr.Result = r

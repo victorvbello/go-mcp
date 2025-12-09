@@ -46,19 +46,23 @@ func NewProtocol(opts *ProtocolOptions, pi ProtocolInterface) *Protocol {
 	}
 
 	newProtocol.logger = utils.NewLoggerService()
-	newProtocol.SetNotificationHandler(types.NewCancelledNotification(nil), func(notification types.NotificationInterface) error {
+	newProtocol.SetNotificationHandler(types.NewCancelledNotification(nil), func(ctx context.Context, notification types.NotificationInterface) error {
 		notify := notification.(*types.CancelledNotification)
+		newProtocol.logger.Info(utils.LogFields{"reason": notify.Params.Reason}, "cancelled notification")
+		if notify.Params.RequestID == 0 {
+			return nil
+		}
 		CancelFunc, ok := newProtocol.requestHandlerCancel.Get(notify.Params.RequestID)
 		if !ok {
-			return ErrCancelFunNotFound
+			newProtocol.logger.Error(utils.LogFields{"requestID": notify.Params.RequestID}, ErrCancelFunNotFound.Error())
+			return nil
 		}
-		newProtocol.logger.Info(nil, notify.Params.Reason)
 		CancelFunc()
 		return nil
 	})
-	newProtocol.SetNotificationHandler(types.NewProgressNotification(nil), func(notification types.NotificationInterface) error {
+	newProtocol.SetNotificationHandler(types.NewProgressNotification(nil), func(ctx context.Context, notification types.NotificationInterface) error {
 		notify := notification.(*types.ProgressNotification)
-		newProtocol.onProgress(notify)
+		newProtocol.onProgress(ctx, notify)
 		return nil
 	})
 
@@ -107,10 +111,10 @@ func (p *Protocol) cleanupTimeout(messageID int) {
 //Attaches to the given transport, starts it, and starts listening for messages.
 //
 //The Protocol object assumes ownership of the Transport, replacing any callbacks that have already been set, and expects that it is the only user of the Transport instance going forward.
-func (p *Protocol) Connect(transport Transport) {
+func (p *Protocol) Connect(ctx context.Context, transport Transport) {
 	p.transport = transport
 	p.transport.SetGlobalOnClose(func() {
-		p.onClose()
+		p.onClose(ctx)
 	})
 	p.transport.SetGlobalOnError(func(err error) {
 		p.onError(err)
@@ -118,11 +122,11 @@ func (p *Protocol) Connect(transport Transport) {
 	p.transport.SetGlobalOnMessage(func(message types.JSONRPCMessage, extra *MessageExtraInfo) {
 		switch msg := message.(type) {
 		case types.JSONRPCGeneralResponse:
-			p.onResponse(msg)
+			p.onResponse(ctx, msg)
 		case *types.JSONRPCRequest:
 			p.onRequest(msg, extra)
 		case *types.JSONRPCNotification:
-			p.onNotification(msg)
+			p.onNotification(ctx, msg)
 		default:
 			p.onError(fmt.Errorf("unknown message type %T", msg))
 		}
@@ -134,7 +138,7 @@ func (p *Protocol) Connect(transport Transport) {
 	}
 }
 
-func (p *Protocol) onClose() {
+func (p *Protocol) onClose(ctx context.Context) {
 	responseHandlers := p.responseHandlers.GetAll()
 	p.responseHandlers.Clear()
 	p.progressHandlers.Clear()
@@ -144,7 +148,7 @@ func (p *Protocol) onClose() {
 	globalError := types.NewMcpError(types.ERROR_CODE_CONNECTION_CLOSED, "Connection closed", nil)
 	jsonError := &types.JSONRPCError{Error: globalError}
 	for _, handler := range responseHandlers {
-		handler(jsonError)
+		handler(ctx, jsonError)
 	}
 }
 
@@ -152,7 +156,7 @@ func (p *Protocol) onError(err error) {
 	p.owner.OnError(err)
 }
 
-func (p *Protocol) onNotification(notification *types.JSONRPCNotification) {
+func (p *Protocol) onNotification(ctx context.Context, notification *types.JSONRPCNotification) {
 	handlerType := "notificationHandlers"
 	handler, ok := p.notificationHandlers.Get(notification.NotificationInterface.GetNotification().Method)
 	if !ok {
@@ -162,9 +166,9 @@ func (p *Protocol) onNotification(notification *types.JSONRPCNotification) {
 	if handler == nil {
 		return
 	}
-	err := handler(notification.NotificationInterface)
+	err := handler(ctx, notification.NotificationInterface)
 	if err != nil {
-		p.onError(fmt.Errorf("uncaught error in notification handler[%s] %v %v", handlerType, err, notification))
+		p.onError(fmt.Errorf("uncaught error in notification handler[%s] %v %v", handlerType, err, notification.GetNotification()))
 	}
 }
 
@@ -198,7 +202,7 @@ func (p *Protocol) onRequest(request *types.JSONRPCRequest, extra *MessageExtraI
 	if request.GetRequest().Params != nil {
 		safeRequestParams = request.GetRequest().Params
 	}
-	RhExMeta, err := types.NewMetadataRequestFromMetadata(safeRequestParams.Metadata)
+	RhExMeta, err := types.NewMetadataRequestFromMetadata(safeRequestParams.Meta)
 	if err != nil {
 		_, err := p.transport.Send(&types.JSONRPCError{
 			JSONRPC: types.JSONRPC_VERSION,
@@ -224,7 +228,7 @@ func (p *Protocol) onRequest(request *types.JSONRPCRequest, extra *MessageExtraI
 		AuthInfo:    safeExtra.AuthInfo,
 		RequestID:   request.ID,
 		RequestInfo: safeExtra.RequestInfo,
-		SendNotification: func(notification types.NotificationInterface) {
+		SendNotification: func(ctx context.Context, notification types.NotificationInterface) {
 			p.Notification(notification, &NotificationOptions{RelatedRequestID: request.ID})
 		},
 		SendRequest: func(req types.RequestInterface, opts *RequestOptions) (types.ResultInterface, error) {
@@ -262,7 +266,7 @@ func (p *Protocol) onRequest(request *types.JSONRPCRequest, extra *MessageExtraI
 	}
 }
 
-func (p *Protocol) onProgress(progressNotify *types.ProgressNotification) {
+func (p *Protocol) onProgress(ctx context.Context, progressNotify *types.ProgressNotification) {
 	messageID := progressNotify.Params.ProgressToken.(int)
 	progressHandler, okProgressHandle := p.progressHandlers.Get(messageID)
 	if !okProgressHandle {
@@ -276,7 +280,7 @@ func (p *Protocol) onProgress(progressNotify *types.ProgressNotification) {
 		_, err := p.resetTimeout(messageID)
 		if err != nil {
 			jsonError := &types.JSONRPCError{Error: err}
-			responseHandler(jsonError)
+			responseHandler(ctx, jsonError)
 			return
 		}
 	}
@@ -287,7 +291,7 @@ func (p *Protocol) onProgress(progressNotify *types.ProgressNotification) {
 	}
 }
 
-func (p *Protocol) onResponse(response types.JSONRPCGeneralResponse) {
+func (p *Protocol) onResponse(ctx context.Context, response types.JSONRPCGeneralResponse) {
 	messageID := int(response.GetRequestID())
 	responseHandler, okResponseHandler := p.responseHandlers.Get(messageID)
 	if !okResponseHandler {
@@ -303,7 +307,7 @@ func (p *Protocol) onResponse(response types.JSONRPCGeneralResponse) {
 	switch resp := response.(type) {
 	case *types.JSONRPCResponse:
 		handlerType = fmt.Sprintf("%T", resp)
-		err = responseHandler(resp)
+		err = responseHandler(ctx, resp)
 	case *types.JSONRPCError:
 		handlerType = fmt.Sprintf("%T", resp)
 		globalError := types.NewMcpError(
@@ -311,7 +315,7 @@ func (p *Protocol) onResponse(response types.JSONRPCGeneralResponse) {
 			resp.Error.GetErrorMessage(),
 			resp.Error.GetErrorData(),
 		)
-		err = responseHandler(&types.JSONRPCError{Error: globalError})
+		err = responseHandler(ctx, &types.JSONRPCError{Error: globalError})
 	}
 	if err != nil {
 		p.onError(fmt.Errorf("responseHandler error in %s %v", handlerType, err))
@@ -360,10 +364,9 @@ func (p *Protocol) Request(request types.RequestInterface, opts *RequestOptions)
 		jsonrpcRequest.RequestInterface = &types.Request{
 			Method: request.GetRequest().Method,
 			Params: &types.BaseRequestParams{
-				Metadata: map[string]interface{}{
+				Meta: types.Meta{
 					"progressToken": types.ProgressToken(messageID),
 				},
-				AdditionalProperties: request.GetRequest().Params.AdditionalProperties,
 			}}
 	}
 	type requestReturnChan struct {
@@ -372,7 +375,6 @@ func (p *Protocol) Request(request types.RequestInterface, opts *RequestOptions)
 	}
 	returnChan := make(chan requestReturnChan)
 	defer func() {
-		fmt.Println("---- 1")
 		select {
 		case resultReturn := <-returnChan:
 			gResp = resultReturn.r
@@ -380,7 +382,6 @@ func (p *Protocol) Request(request types.RequestInterface, opts *RequestOptions)
 				gErr = resultReturn.e
 			}
 		}
-		fmt.Println("---- 2")
 	}()
 	cancelFlow := func(reason types.ErrorInterface) {
 		var once sync.Once
@@ -419,7 +420,7 @@ func (p *Protocol) Request(request types.RequestInterface, opts *RequestOptions)
 		}
 	}
 
-	p.responseHandlers.Set(messageID, func(response types.JSONRPCGeneralResponse) error {
+	p.responseHandlers.Set(messageID, func(ctx context.Context, response types.JSONRPCGeneralResponse) error {
 		if safeOpts.Canceled() {
 			return nil
 		}
@@ -457,7 +458,7 @@ func (p *Protocol) Request(request types.RequestInterface, opts *RequestOptions)
 	timeoutHandler := func() {
 		cancelFlow(types.NewMcpError(
 			types.ERROR_CODE_REQUEST_TIMEOUT,
-			"request timed out", map[string]interface{}{"timeout": timeout}))
+			"request timed out "+request.GetRequest().Method, map[string]interface{}{"timeout": timeout}))
 
 	}
 

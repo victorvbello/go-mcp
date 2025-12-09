@@ -1,10 +1,5 @@
 package types
 
-import (
-	"encoding/json"
-	"fmt"
-)
-
 const (
 	EMPTY_RESULT_CLIENT_RESULT_TYPE = iota + 60
 	CREATE_MESSAGE_RESULT_CLIENT_RESULT_TYPE
@@ -49,46 +44,8 @@ func (ep *EmptyResult) TypeOfResultInterface() int { return EMPTY_RESULT_RESULT_
 
 type Result struct {
 	//Attach additional metadata to their notifications.
-	Metadata map[string]interface{} `json:"_meta,omitempty"`
-	//Attach additional properties, _meta is reserved by MCP
-	AdditionalProperties map[string]interface{} `json:"-"`
+	Meta `json:"_meta,omitempty"`
 }
-
-func (re *Result) MarshalJSON() ([]byte, error) {
-	raw := make(map[string]interface{})
-	if re.Metadata != nil {
-		raw["_meta"] = re.Metadata
-	}
-	for key, value := range re.AdditionalProperties {
-		if key == "_meta" {
-			continue //Skip the _meta key is reserved by MCP
-		}
-		raw[key] = value
-	}
-
-	return json.Marshal(raw)
-}
-
-func (re *Result) UnmarshalJSON(data []byte) error {
-	raw := make(map[string]interface{})
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-	if _, ok := raw["_meta"]; !ok {
-		return nil //No _meta field, nothing to unmarshal
-	}
-	bm, err := json.Marshal(raw["_meta"])
-	if err != nil {
-		return fmt.Errorf("error marshaling _meta: %v", err)
-	}
-	if err := json.Unmarshal(bm, &re.Metadata); err != nil {
-		return fmt.Errorf("error unmarshaling into metadata: %v", err)
-	}
-	delete(raw, "_meta")
-	re.AdditionalProperties = raw
-	return nil
-}
-
 type ServerCapabilitiesListChanged struct {
 	ListChanged bool `json:"listChanged,omitempty"`
 }
@@ -118,6 +75,49 @@ type ServerCapabilities struct {
 	//Present if the server offers any tools to call.
 	//Whether this server supports notifications for changes to the tool list.
 	Tools *ServerCapabilitiesListChanged `json:"tools,omitempty"`
+}
+
+func (sc *ServerCapabilities) UpdateAll(new *ServerCapabilities) {
+	capUpdaters := []func(dst, src *ServerCapabilities){
+		func(dst, src *ServerCapabilities) {
+			if src.Experimental != nil {
+				dst.Experimental = src.Experimental
+			}
+		},
+		func(dst, src *ServerCapabilities) {
+			if src.Logging != nil {
+				dst.Logging = src.Logging
+			}
+		},
+		func(dst, src *ServerCapabilities) {
+			if src.Completions != nil {
+				dst.Completions = src.Completions
+			}
+		},
+		func(dst, src *ServerCapabilities) {
+			if src.Sampling != nil {
+				dst.Sampling = src.Sampling
+			}
+		},
+		func(dst, src *ServerCapabilities) {
+			if src.Prompts != nil {
+				dst.Prompts = src.Prompts
+			}
+		},
+		func(dst, src *ServerCapabilities) {
+			if src.Resources != nil {
+				dst.Resources = src.Resources
+			}
+		},
+		func(dst, src *ServerCapabilities) {
+			if src.Tools != nil {
+				dst.Tools = src.Tools
+			}
+		},
+	}
+	for _, update := range capUpdaters {
+		update(sc, new)
+	}
 }
 
 //After receiving an initialize request from the client, the server sends this response.

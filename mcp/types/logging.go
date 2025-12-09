@@ -1,9 +1,6 @@
 package types
 
 import (
-	"encoding/json"
-	"fmt"
-
 	"github.com/victorvbello/gomcp/mcp/methods"
 )
 
@@ -56,57 +53,6 @@ type SetLevelRequestParams struct {
 	Level LoggingLevel `json:"level"`
 }
 
-func (slrp *SetLevelRequestParams) MarshalJSON() ([]byte, error) {
-	//bridge struct to marshal known fields
-	aux := struct {
-		Level LoggingLevel `json:"level"`
-	}{
-		Level: slrp.Level,
-	}
-	knownFields, err := json.Marshal(&aux)
-	if err != nil {
-		return nil, fmt.Errorf("marshal known fields: %w", err)
-	}
-	//Marshal knownFields to map
-	baseMap := make(map[string]interface{})
-	if err := json.Unmarshal(knownFields, &baseMap); err != nil {
-		return nil, fmt.Errorf("unmarshal known fields to map: %w", err)
-	}
-	//Marshal base.BaseRequestParams
-	baseExtra, err := slrp.BaseRequestParams.MarshalJSON()
-	if err != nil {
-		return nil, fmt.Errorf("marshal base fields: %w", err)
-	}
-	if err := json.Unmarshal(baseExtra, &baseMap); err != nil {
-		return nil, fmt.Errorf("unmarshal base fields: %w", err)
-	}
-	return json.Marshal(baseMap)
-}
-
-func (slrp *SetLevelRequestParams) UnmarshalJSON(data []byte) error {
-	aux := struct {
-		Level LoggingLevel `json:"level"`
-	}{}
-	if err := json.Unmarshal(data, &aux); err != nil {
-		return fmt.Errorf("json.Unmarshal: %v", err)
-	}
-	slrp.Level = aux.Level
-
-	raw := make(map[string]interface{})
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return fmt.Errorf("error unmarshaling global data: %v", err)
-	}
-	delete(raw, "level")
-	bm, err := json.Marshal(raw)
-	if err != nil {
-		return fmt.Errorf("error marshaling rest of data: %v", err)
-	}
-	if err := slrp.BaseRequestParams.UnmarshalJSON(bm); err != nil {
-		return fmt.Errorf("baseRequestParams.UnmarshalJSON: %w", err)
-	}
-	return nil
-}
-
 //Notification of a log message passed from server to client. If no logging/setLevel request has been sent from the client, the server MAY decide which messages to send automatically.
 //
 //Only method: METHOD_NOTIFICATION_MESSAGE
@@ -142,65 +88,4 @@ type LoggingMessageNotificationParams struct {
 	Logger string `json:"logger,omitempty"`
 	//The data to be logged, such as a string message or an object. Any type is allowed here.
 	Data interface{} `json:"data"`
-}
-
-func (lmnp *LoggingMessageNotificationParams) MarshalJSON() ([]byte, error) {
-	//bridge struct to marshal known fields
-	aux := struct {
-		Level  LoggingLevel `json:"level"`
-		Logger string       `json:"logger,omitempty"`
-		Data   interface{}  `json:"data"`
-	}{
-		Level:  lmnp.Level,
-		Logger: lmnp.Logger,
-		Data:   lmnp.Data,
-	}
-	knownFields, err := json.Marshal(&aux)
-	if err != nil {
-		return nil, fmt.Errorf("marshal known fields: %w", err)
-	}
-	//Marshal knownFields to map
-	baseMap := make(map[string]interface{})
-	if err := json.Unmarshal(knownFields, &baseMap); err != nil {
-		return nil, fmt.Errorf("unmarshal known fields to map: %w", err)
-	}
-	//Marshal base.BaseNotificationParams
-	baseExtra, err := lmnp.BaseNotificationParams.MarshalJSON()
-	if err != nil {
-		return nil, fmt.Errorf("marshal base fields: %w", err)
-	}
-	if err := json.Unmarshal(baseExtra, &baseMap); err != nil {
-		return nil, fmt.Errorf("unmarshal base fields: %w", err)
-	}
-	return json.Marshal(baseMap)
-}
-
-func (lmnp *LoggingMessageNotificationParams) UnmarshalJSON(data []byte) error {
-	aux := struct {
-		Level  LoggingLevel `json:"level"`
-		Logger string       `json:"logger,omitempty"`
-		Data   interface{}  `json:"data"`
-	}{}
-	if err := json.Unmarshal(data, &aux); err != nil {
-		return fmt.Errorf("json.Unmarshal: %v", err)
-	}
-	lmnp.Level = aux.Level
-	lmnp.Logger = aux.Logger
-	lmnp.Data = aux.Data
-
-	raw := make(map[string]interface{})
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return fmt.Errorf("error unmarshaling global data: %v", err)
-	}
-	delete(raw, "level")
-	delete(raw, "logger")
-	delete(raw, "data")
-	bm, err := json.Marshal(raw)
-	if err != nil {
-		return fmt.Errorf("error marshaling rest of data: %v", err)
-	}
-	if err := lmnp.BaseNotificationParams.UnmarshalJSON(bm); err != nil {
-		return fmt.Errorf("BaseNotificationParams.UnmarshalJSON: %w", err)
-	}
-	return nil
 }

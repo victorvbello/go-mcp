@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/victorvbello/gomcp/mcp/shared"
@@ -32,15 +33,17 @@ type Server struct {
 	logger             utils.LogService
 	//Callback for when initialization has fully completed (i.e., the client has sent an `initialized` notification).
 	OnInitialized func() error
+	loggingLevels *muxloggingLevelBySessionID
 }
 
 //Initializes this server with the given name and version information.
 func NewServer(serverInfo types.Implementation, opts ServerOptions) (*Server, error) {
 	srv := &Server{
-		serverInfo:   serverInfo,
-		capabilities: opts.Capabilities,
-		instructions: opts.Instructions,
-		logger:       utils.NewLoggerService(),
+		serverInfo:    serverInfo,
+		capabilities:  opts.Capabilities,
+		instructions:  opts.Instructions,
+		logger:        utils.NewLoggerService(),
+		loggingLevels: newMuxloggingLevelBySessionID(),
 	}
 	protocol := shared.NewProtocol(&opts.ProtocolOptions, srv)
 	srv.Protocol = protocol
@@ -52,7 +55,7 @@ func NewServer(serverInfo types.Implementation, opts ServerOptions) (*Server, er
 		return r, nil
 	})
 
-	srv.SetNotificationHandler(types.NewInitializedNotification(nil), func(notification types.NotificationInterface) error {
+	srv.SetNotificationHandler(types.NewInitializedNotification(nil), func(ctx context.Context, notification types.NotificationInterface) error {
 		if srv.OnInitialized != nil {
 			err := srv.OnInitialized()
 			if err != nil {
@@ -61,6 +64,25 @@ func NewServer(serverInfo types.Implementation, opts ServerOptions) (*Server, er
 		}
 		return nil
 	})
+
+	if srv.capabilities.Logging != nil {
+		srv.SetRequestHandler(types.NewSetLevelRequest(nil), func(request types.RequestInterface, extra *shared.RequestHandlerExtra) (types.ResultInterface, error) {
+			transportSessionId := srv.GetTransport().GetSessionID()
+			rll, okType := request.(*types.SetLevelRequest)
+			if !okType {
+				err := types.NewMcpError(types.ERROR_CODE_INVALID_PARAMS, "invalid request type SetLevelRequest", nil)
+				return nil, err.ToError()
+			}
+			if extra != nil {
+				if extra.SessionID != "" {
+					transportSessionId = extra.SessionID
+				}
+			}
+			srv.loggingLevels.Set(transportSessionId, rll.Params.Level)
+			srv.logger.Info(utils.LogFields{"level": rll.Params.Level}, "client log level set")
+			return new(types.EmptyResult), nil
+		})
+	}
 
 	return srv, nil
 }
@@ -99,7 +121,7 @@ func (s *Server) FallbackRequestHandler() shared.RequestHandler {
 
 //A handler to invoke for any notification types that do not have their own handler installed.
 func (s *Server) FallbackNotificationHandler() shared.NotificationHandler {
-	return func(notification types.NotificationInterface) error {
+	return func(ctx context.Context, notification types.NotificationInterface) error {
 		return nil
 	}
 }
@@ -237,7 +259,7 @@ func (s *Server) RegisterCapabilities(capabilities types.ServerCapabilities) err
 	if s.GetTransport() != nil {
 		return fmt.Errorf("cannot register capabilities after connecting to transport")
 	}
-	s.capabilities = capabilities
+	s.capabilities.UpdateAll(&capabilities)
 	return nil
 }
 

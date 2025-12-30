@@ -25,34 +25,49 @@ func (rb *ReadBuffer) Append(chunk []byte) (int, error) {
 	return b, nil
 }
 
-//ReadMessage reads the next JSON-RPC message from the buffer if a full line is available.
-func (rb *ReadBuffer) ReadMessage() (types.JSONRPCMessage, error) {
+func (rb *ReadBuffer) ReadStringData() (string, error) {
 	//Use a buffered reader over the current buffer contents
 	reader := bufio.NewReader(&rb.buffer)
 	//Peek to see if we have a complete line (without consuming it)
 	line, err := reader.ReadString('\n')
 	if err != nil {
 		if errors.Is(err, io.EOF) {
-			return nil, nil //No full line yet
+			return "", nil //No full line yet
 		}
-		return nil, fmt.Errorf("reader.ReadString %v", err)
+		return "", fmt.Errorf("reader.ReadString %v", err)
 	}
 	//Remove optional trailing \r
 	line = strings.TrimRight(line, "\r\n")
+	return line, nil
+}
+
+func (rb *ReadBuffer) StringDataToMessage(line string) (types.JSONRPCMessage, error) {
+	var msg types.RawMessage
+	if err := json.Unmarshal([]byte(line), &msg); err != nil {
+		return nil, fmt.Errorf("json.Unmarshal line:%s, err:%v", line, err)
+	}
+	finalMsg, err := msg.ToJSONRPCMessage()
+	if err != nil {
+		return nil, fmt.Errorf("msg.ToJSONRPCMessage line:%s, err:%v", line, err)
+	}
+	return finalMsg, nil
+}
+
+//ReadMessage reads the next JSON-RPC message from the buffer if a full line is available.
+func (rb *ReadBuffer) ReadMessage() (types.JSONRPCMessage, error) {
+	line, err := rb.ReadStringData()
+	if err != nil {
+		return nil, fmt.Errorf("ReadStringData line:%s, err:%v", line, err)
+	}
 	if line == "" {
 		//Return if empty
 		return nil, nil
 	}
-
 	//Consume the line from the buffer
 	//Note: bufio.ReadString also advances the underlying reader, so the buffer is now clean
-	var msg types.RawMessage
-	if err := json.Unmarshal([]byte(line), &msg); err != nil {
-		return nil, fmt.Errorf("json.Unmarshal %v", err)
-	}
-	finalMsg, err := msg.ToJSONRPCMessage()
+	finalMsg, err := rb.StringDataToMessage(line)
 	if err != nil {
-		return nil, fmt.Errorf("msg.ToJSONRPCMessage %v", err)
+		return nil, fmt.Errorf("rb.StringDataToMessage line:%s, err:%v", line, err)
 	}
 	return finalMsg, nil
 }
@@ -60,6 +75,10 @@ func (rb *ReadBuffer) ReadMessage() (types.JSONRPCMessage, error) {
 //Clear resets the internal buffer.
 func (rb *ReadBuffer) Clear() {
 	rb.buffer.Reset()
+}
+
+func (rb *ReadBuffer) GetBuffer() bytes.Buffer {
+	return rb.buffer
 }
 
 func StdioSerializeMessage(msg types.JSONRPCMessage) (string, error) {

@@ -102,3 +102,4 @@ type CompleteResult struct {
 
 func (cr *CompleteResult) TypeOfServerResult() int    { return COMPLETE_RESULT_SERVER_RESULT_TYPE }
 func (cr *CompleteResult) TypeOfResultInterface() int { return COMPLETE_RESULT_RESULT_INTERFACE_TYPE }
+func (cr *CompleteResult) GetResult() Result          { return cr.Result }

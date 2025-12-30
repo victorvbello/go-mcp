@@ -1,6 +1,9 @@
 package types
 
 import (
+	"encoding/json"
+	"fmt"
+
 	"github.com/victorvbello/gomcp/mcp/methods"
 )
 
@@ -38,6 +41,43 @@ type PromptMessage struct {
 	Role Role `json:"role"`
 	//Could be TextContent/ImageContent/AudioContent/EmbeddedResource
 	Content Content `json:"content"`
+}
+
+func (pm *PromptMessage) UnmarshalJSON(data []byte) error {
+	var aux struct {
+		Role    Role            `json:"role"`
+		Content json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return fmt.Errorf("error PromptMessage unmarshaling global meta: %v", err)
+	}
+	pm.Role = aux.Role
+	contentDataMap := make(map[string]interface{})
+	if err := json.Unmarshal(aux.Content, &contentDataMap); err != nil {
+		return fmt.Errorf("error PromptMessage unmarshaling global data in map: %v", err)
+	}
+	var c Content
+	var contentFactories = map[string]func() Content{
+		"text":     func() Content { return new(TextContent) },
+		"image":    func() Content { return new(ImageContent) },
+		"audio":    func() Content { return new(AudioContent) },
+		"resource": func() Content { return new(EmbeddedResource) },
+	}
+	for key, builder := range contentFactories {
+		if _, ok := contentDataMap[key]; ok {
+			c = builder()
+			break
+		}
+	}
+	if c == nil {
+		c = new(TextContent)
+	}
+
+	if err := json.Unmarshal(aux.Content, &c); err != nil {
+		return fmt.Errorf("error PromptMessage unmarshaling err: %v", err)
+	}
+	pm.Content = c
+	return nil
 }
 
 //An optional notification from the server to the client, informing it that the list of prompts it offers has changed. This may be issued by servers without any previous subscription from the client.
@@ -133,6 +173,7 @@ func (lpr *ListPromptsResult) TypeOfServerResult() int { return LIST_PROMPTS_RES
 func (lpr *ListPromptsResult) TypeOfResultInterface() int {
 	return LIST_PROMPTS_RESULT_RESULT_INTERFACE_TYPE
 }
+func (lpr *ListPromptsResult) GetResult() Result { return lpr.Result }
 
 //The server's response to a prompts/get request from the client.
 type GetPromptResult struct {
@@ -146,6 +187,7 @@ func (gpr *GetPromptResult) TypeOfServerResult() int { return GET_PROMPT_RESULT_
 func (gpr *GetPromptResult) TypeOfResultInterface() int {
 	return GET_PROMPT_RESULT_RESULT_INTERFACE_TYPE
 }
+func (gpr *GetPromptResult) GetResult() Result { return gpr.Result }
 
 //Identifies a prompt.
 type PromptReference struct {

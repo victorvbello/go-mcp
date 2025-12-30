@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	_MAX_STDIO_BUFFER_READ = 4096
+	_MAX_SERVER_STDIO_BUFFER_READ = 4096
 )
 
 //Server transport for stdio: this communicates with a MCP client by reading from the current process' stdin and writing to stdout.
@@ -29,16 +29,18 @@ type StdioServerTransport struct {
 	globalContextCancel context.CancelFunc
 	stdin               *bufio.Reader
 	stdout              *bufio.Writer
+	stderr              *bufio.Writer
 	started             bool
 	readBuffer          shared.ReadBuffer
 	logger              utils.LogService
 }
 
-func NewStdioServerTransport(stdin io.Reader, stdout io.Writer) shared.Transport {
+func NewStdioServerTransport(stdin io.Reader, stdout, stderr io.Writer) shared.Transport {
 	nst := &StdioServerTransport{
 		stdin:  bufio.NewReader(stdin),
 		stdout: bufio.NewWriter(stdout),
-		logger: utils.NewLoggerService(),
+		stderr: bufio.NewWriter(stderr),
+		logger: utils.NewLoggerService("new-stdio-server-transport"),
 	}
 	return nst
 }
@@ -70,15 +72,15 @@ func (st *StdioServerTransport) onError(err error) {
 //This method should only be called after callbacks are installed, or else messages may be lost.
 //
 //NOTE: This method should not be called explicitly when using Client, Server, or Protocol classes, as they will implicitly call start().
-func (st *StdioServerTransport) Start() error {
+func (st *StdioServerTransport) Start(ctx context.Context) error {
 	if st.started {
 		return fmt.Errorf("stdioServerTransport already started! If using Server class, note that connect() calls start() automatically")
 	}
 
-	st.globalContext, st.globalContextCancel = context.WithCancel(context.Background())
+	st.globalContext, st.globalContextCancel = context.WithCancel(ctx)
 
 	go func() {
-		buf := make([]byte, _MAX_STDIO_BUFFER_READ)
+		buf := make([]byte, _MAX_SERVER_STDIO_BUFFER_READ)
 		for {
 			select {
 			case <-st.globalContext.Done():
@@ -101,6 +103,18 @@ func (st *StdioServerTransport) Start() error {
 	return nil
 }
 
+func (st *StdioServerTransport) notificationMessage(request types.JSONRPCMessage) bool {
+	if request.JSONRPCMessageType() != types.JSONRPC_MESSAGE_JSONRPC_NOTIFICATION_TYPE {
+		return false
+	}
+	msN, okType := request.(*types.JSONRPCNotification)
+	if !okType {
+		return false
+	}
+	_, okNotifyType := msN.NotificationInterface.(*types.LoggingMessageNotification)
+	return okNotifyType
+}
+
 //Sends a JSON-RPC message (request or response).
 //
 //If present, `relatedRequestId` is used to indicate to the transport which incoming request to associate this outgoing message with.
@@ -111,6 +125,9 @@ func (st *StdioServerTransport) Send(request types.JSONRPCMessage, options *shar
 	}
 	st.mu.RLock()
 	stdout := st.stdout
+	if st.notificationMessage(request) {
+		stdout = st.stderr
+	}
 	st.mu.RUnlock()
 	_, err = stdout.Write([]byte(msgJSON))
 	if err != nil {

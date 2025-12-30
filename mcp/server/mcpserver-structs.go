@@ -110,7 +110,7 @@ type RegisteredToolUpdateOpts struct {
 	Title        string
 	Description  string
 	ParamsSchema types.ToolInputSchema
-	OutputSchema types.ToolOutputSchema
+	OutputSchema *types.ToolOutputSchema
 	Annotations  *types.ToolAnnotations
 	Callback     ToolCallback
 	Enabled      bool
@@ -120,7 +120,7 @@ type RegisteredTool struct {
 	Title        string
 	Description  string
 	InputSchema  types.ToolInputSchema
-	OutputSchema types.ToolOutputSchema
+	OutputSchema *types.ToolOutputSchema
 	Annotations  *types.ToolAnnotations
 	Callback     ToolCallback
 	Enabled      bool

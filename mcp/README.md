@@ -1,1 +1,0 @@
-schema version https://github.com/modelcontextprotocol/modelcontextprotocol/tree/main/schema/2025-03-26

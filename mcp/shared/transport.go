@@ -1,6 +1,7 @@
 package shared
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/victorvbello/gomcp/mcp/types"
@@ -42,7 +43,7 @@ type Transport interface {
 	//This method should only be called after callbacks are installed, or else messages may be lost.
 	//
 	//NOTE: This method should not be called explicitly when using Client, Server, or Protocol classes, as they will implicitly call start().
-	Start() error
+	Start(ctx context.Context) error
 	//Sends a JSON-RPC message (request or response).
 	//
 	//If present, `relatedRequestId` is used to indicate to the transport which incoming request to associate this outgoing message with.

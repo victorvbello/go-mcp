@@ -20,8 +20,6 @@ type ServerOptions struct {
 //An MCP server on top of a pluggable transport.
 //
 //This server will automatically respond to the initialization flow as initiated from the client.
-//
-//To use with custom types, extend the base Request/Notification/Result types and pass them as type parameters:
 type Server struct {
 	*shared.Protocol
 	clientCapabilities *types.ClientCapabilities
@@ -31,6 +29,7 @@ type Server struct {
 	serverInfo         types.Implementation
 	onErrorCallBack    func(err error)
 	logger             utils.LogService
+	wrapperOnErrorChan chan error
 	//Callback for when initialization has fully completed (i.e., the client has sent an `initialized` notification).
 	OnInitialized func() error
 	loggingLevels *muxloggingLevelBySessionID
@@ -42,7 +41,7 @@ func NewServer(serverInfo types.Implementation, opts ServerOptions) (*Server, er
 		serverInfo:    serverInfo,
 		capabilities:  opts.Capabilities,
 		instructions:  opts.Instructions,
-		logger:        utils.NewLoggerService(),
+		logger:        utils.NewLoggerService("server"),
 		loggingLevels: newMuxloggingLevelBySessionID(),
 	}
 	protocol := shared.NewProtocol(&opts.ProtocolOptions, srv)
@@ -103,7 +102,16 @@ func (s *Server) OnClose() error {
 //
 //Note that errors are not necessarily fatal; they are used for reporting any kind of exceptional condition out of band.
 func (s *Server) OnError(err error) error {
-	s.logger.Error(nil, err.Error())
+	if err != nil {
+		s.logger.Error(nil, err.Error())
+	}
+	s.onErrorCallBack(err)
+	go func() {
+		if s.wrapperOnErrorChan == nil {
+			return
+		}
+		s.wrapperOnErrorChan <- err
+	}()
 	return nil
 }
 

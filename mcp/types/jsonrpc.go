@@ -149,37 +149,68 @@ func (jr *JSONRPCRequest) MarshalJSON() ([]byte, error) {
 	var reqInB []byte
 	switch jr.RequestInterface.TypeOfRequestInterface() {
 	case PING_REQUEST_REQUEST_INTERFACE_TYPE:
-		break
+		reqInB, err = json.Marshal(jr.RequestInterface.(*PingRequest))
+		if err != nil {
+			return nil, fmt.Errorf("marshal PING fields: %w", err)
+		}
 	case INITIALIZE_REQUEST_REQUEST_INTERFACE_TYPE:
-		break
-	case REQUEST_REQUEST_INTERFACE_TYPE:
-		break
+		reqInB, err = json.Marshal(jr.RequestInterface.(*InitializeRequest))
+		if err != nil {
+			return nil, fmt.Errorf("marshal METHOD_REQUEST_INITIALIZE fields: %w", err)
+		}
 	case CREATE_MESSAGE_REQUEST_REQUEST_INTERFACE_TYPE:
 		reqInB, err = json.Marshal(jr.RequestInterface.(*CreateMessageRequest))
 		if err != nil {
 			return nil, fmt.Errorf("marshal METHOD_SAMPLING_CREATE_MESSAGE fields: %w", err)
 		}
 	case LIST_ROOTS_REQUEST_REQUEST_INTERFACE_TYPE:
-		break
+		reqInB, err = json.Marshal(jr.RequestInterface.(*ListRootsRequest))
+		if err != nil {
+			return nil, fmt.Errorf("marshal METHOD_LIST_ROOTS fields: %w", err)
+		}
 	case SET_LEVEL_REQUEST_REQUEST_INTERFACE_TYPE:
-		break
+		reqInB, err = json.Marshal(jr.RequestInterface.(*SetLevelRequest))
+		if err != nil {
+			return nil, fmt.Errorf("marshal METHOD_REQUEST_SET_LEVEL_LOGGING fields: %w", err)
+		}
 	case GET_PROMPT_REQUEST_REQUEST_INTERFACE_TYPE:
-		break
+		reqInB, err = json.Marshal(jr.RequestInterface.(*GetPromptRequest))
+		if err != nil {
+			return nil, fmt.Errorf("marshal METHOD_REQUEST_GET_PROMPTS fields: %w", err)
+		}
 	case LIST_PROMPTS_REQUEST_REQUEST_INTERFACE_TYPE:
-		break
+		reqInB, err = json.Marshal(jr.RequestInterface.(*ListPromptsRequest))
+		if err != nil {
+			return nil, fmt.Errorf("marshal METHOD_REQUEST_LIST_PROMPTS fields: %w", err)
+		}
 	case LIST_RESOURCES_REQUEST_REQUEST_INTERFACE_TYPE:
-		break
+		reqInB, err = json.Marshal(jr.RequestInterface.(*ListResourcesRequest))
+		if err != nil {
+			return nil, fmt.Errorf("marshal METHOD_REQUEST_LIST_RESOURCES fields: %w", err)
+		}
 	case LIST_RESOURCE_TEMPLATES_REQUEST_REQUEST_INTERFACE_TYPE:
-		break
+		reqInB, err = json.Marshal(jr.RequestInterface.(*ListResourceTemplatesRequest))
+		if err != nil {
+			return nil, fmt.Errorf("marshal METHOD_REQUEST_TEMPLATES_LIST_RESOURCES fields: %w", err)
+		}
 	case READ_RESOURCE_REQUEST_REQUEST_INTERFACE_TYPE:
-		break
+		reqInB, err = json.Marshal(jr.RequestInterface.(*ReadResourceRequest))
+		if err != nil {
+			return nil, fmt.Errorf("marshal METHOD_REQUEST_READ_RESOURCES fields: %w", err)
+		}
 	case CALL_TOOL_REQUEST_REQUEST_INTERFACE_TYPE:
-		break
+		reqInB, err = json.Marshal(jr.RequestInterface.(*CallToolRequest))
+		if err != nil {
+			return nil, fmt.Errorf("marshal METHOD_REQUEST_CALL_TOOLS fields: %w", err)
+		}
 	case LIST_TOOLS_REQUEST_REQUEST_INTERFACE_TYPE:
-		break
+		reqInB, err = json.Marshal(jr.RequestInterface.(*ListToolsRequest))
+		if err != nil {
+			return nil, fmt.Errorf("marshal METHOD_REQUEST_LIST_TOOLS fields: %w", err)
+		}
 	}
 	if err := json.Unmarshal(reqInB, &baseMap); err != nil {
-		return nil, fmt.Errorf("unmarshal base fields: %w", err)
+		return nil, fmt.Errorf("unmarshal base fields for:%d err:%w", jr.RequestInterface.TypeOfRequestInterface(), err)
 	}
 	return json.Marshal(baseMap)
 }
@@ -234,6 +265,9 @@ func (jr *JSONRPCRequest) UnmarshalJSON(data []byte) error {
 	jr.RequestInterface = r
 	return nil
 }
+func (jr *JSONRPCRequest) String() string {
+	return fmt.Sprintf("jsonrpc: %s requestID: %d request: %s", jr.JSONRPC, jr.ID, jr.GetRequest().Method)
+}
 
 type JSONRPCNotification struct {
 	//JSONRPC version, should be "2.0"
@@ -246,6 +280,76 @@ func (jn *JSONRPCNotification) JSONRPCMessageType() int {
 }
 func (jn *JSONRPCNotification) JSONRPCBatchRequestType() int {
 	return JSONRPC_BATCH_REQUEST_JSONRPC_NOTIFICATION_TYPE
+}
+func (jn *JSONRPCNotification) MarshalJSON() ([]byte, error) {
+	//bridge struct to marshal known fields
+	aux := struct {
+		JSONRPC string `json:"jsonrpc"`
+	}{
+		JSONRPC: jn.JSONRPC,
+	}
+	knownFields, err := json.Marshal(&aux)
+	if err != nil {
+		return nil, fmt.Errorf("marshal known fields: %w", err)
+	}
+	//Marshal knownFields to map
+	baseMap := make(map[string]interface{})
+	if err := json.Unmarshal(knownFields, &baseMap); err != nil {
+		return nil, fmt.Errorf("unmarshal known fields to map: %w", err)
+	}
+	//Marshal NotificationInterface
+	var nifInB []byte
+	switch jn.NotificationInterface.TypeOfNotification() {
+	case CANCELLED_NOTIFICATION_NOTIFICATION_INTERFACE_TYPE:
+		nifInB, err = json.Marshal(jn.NotificationInterface.(*CancelledNotification))
+		if err != nil {
+			return nil, fmt.Errorf("marshal CANCELLED_NOTIFICATION_NOTIFICATION_INTERFACE_TYPE fields: %w", err)
+		}
+	case INITIALIZED_NOTIFICATION_NOTIFICATION_INTERFACE_TYPE:
+		nifInB, err = json.Marshal(jn.NotificationInterface.(*InitializedNotification))
+		if err != nil {
+			return nil, fmt.Errorf("marshal INITIALIZED_NOTIFICATION_NOTIFICATION_INTERFACE_TYPE fields: %w", err)
+		}
+	case PROGRESS_NOTIFICATION_NOTIFICATION_INTERFACE_TYPE:
+		nifInB, err = json.Marshal(jn.NotificationInterface.(*ProgressNotification))
+		if err != nil {
+			return nil, fmt.Errorf("marshal PROGRESS_NOTIFICATION_NOTIFICATION_INTERFACE_TYPE fields: %w", err)
+		}
+	case NOTIFICATION_NOTIFICATION_INTERFACE_TYPE:
+		nifInB, err = json.Marshal(jn.NotificationInterface.(*ProgressNotification))
+		if err != nil {
+			return nil, fmt.Errorf("marshal PROGRESS_NOTIFICATION_NOTIFICATION_INTERFACE_TYPE fields: %w", err)
+		}
+	case LOGGING_MESSAGE_NOTIFICATION_NOTIFICATION_INTERFACE_TYPE:
+		nifInB, err = json.Marshal(jn.NotificationInterface.(*LoggingMessageNotification))
+		if err != nil {
+			return nil, fmt.Errorf("marshal LOGGING_MESSAGE_NOTIFICATION_NOTIFICATION_INTERFACE_TYPE fields: %w", err)
+		}
+	case RESOURCE_UPDATED_NOTIFICATION_NOTIFICATION_INTERFACE_TYPE:
+		nifInB, err = json.Marshal(jn.NotificationInterface.(*ResourceUpdatedNotification))
+		if err != nil {
+			return nil, fmt.Errorf("marshal RESOURCE_UPDATED_NOTIFICATION_NOTIFICATION_INTERFACE_TYPE fields: %w", err)
+		}
+	case RESOURCE_LIST_CHANGED_NOTIFICATION_NOTIFICATION_INTERFACE_TYPE:
+		nifInB, err = json.Marshal(jn.NotificationInterface.(*ResourceListChangedNotification))
+		if err != nil {
+			return nil, fmt.Errorf("marshal RESOURCE_LIST_CHANGED_NOTIFICATION_NOTIFICATION_INTERFACE_TYPE fields: %w", err)
+		}
+	case TOOL_LIST_CHANGED_NOTIFICATION_NOTIFICATION_INTERFACE_TYPE:
+		nifInB, err = json.Marshal(jn.NotificationInterface.(*ToolListChangedNotification))
+		if err != nil {
+			return nil, fmt.Errorf("marshal TOOL_LIST_CHANGED_NOTIFICATION_NOTIFICATION_INTERFACE_TYPE fields: %w", err)
+		}
+	case PROMPT_LIST_CHANGED_NOTIFICATION_NOTIFICATION_INTERFACE_TYPE:
+		nifInB, err = json.Marshal(jn.NotificationInterface.(*PromptListChangedNotification))
+		if err != nil {
+			return nil, fmt.Errorf("marshal PROMPT_LIST_CHANGED_NOTIFICATION_NOTIFICATION_INTERFACE_TYPE fields: %w", err)
+		}
+	}
+	if err := json.Unmarshal(nifInB, &baseMap); err != nil {
+		return nil, fmt.Errorf("unmarshal base fields for:%d err:%w", jn.NotificationInterface.TypeOfNotification(), err)
+	}
+	return json.Marshal(baseMap)
 }
 func (jn *JSONRPCNotification) UnmarshalJSON(data []byte) error {
 	var meta struct {
@@ -417,6 +521,20 @@ func (jr *JSONRPCResponse) UnmarshalJSON(data []byte) error {
 	}
 
 	var r ResultInterface
+	var resultFactoriesSortedKeys = []string{
+		"prompts",
+		"resources",
+		"resourceTemplates",
+		"completion",
+		"tools",
+		"messages",
+		"contents",
+		"protocolVersion",
+		"nextCursor",
+		"roots",
+		"model",
+		"content",
+	}
 	var resultFactories = map[string]func() ResultInterface{
 		"prompts":           func() ResultInterface { return new(ListPromptsResult) },
 		"resources":         func() ResultInterface { return new(ListResourcesResult) },
@@ -432,10 +550,13 @@ func (jr *JSONRPCResponse) UnmarshalJSON(data []byte) error {
 		"content":           func() ResultInterface { return new(CallToolResult) },
 	}
 
-	for key, builder := range resultFactories {
+	for _, key := range resultFactoriesSortedKeys {
 		if _, ok := resultDataMap[key]; ok {
-			r = builder()
-			break
+			if builder, okBuilder := resultFactories[key]; okBuilder {
+				r = builder()
+				break
+			}
+
 		}
 	}
 	if r == nil {

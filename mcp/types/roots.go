@@ -52,6 +52,7 @@ func (lrr *ListRootsResult) TypeOfClientResult() int { return LIST_ROOTS_RESULT_
 func (lrr *ListRootsResult) TypeOfResultInterface() int {
 	return LIST_ROOTS_RESULT_RESULT_INTERFACE_TYPE
 }
+func (lrr *ListRootsResult) GetResult() Result { return lrr.Result }
 
 //A notification from the client to the server, informing it that the list of roots has changed.
 //This notification should be sent whenever the client adds, removes, or modifies any root.

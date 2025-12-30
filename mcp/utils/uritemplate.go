@@ -16,8 +16,8 @@ const (
 
 type uriTemplatePartType string
 
-var valueUriTemplatePartType uriTemplatePartType
-var TextUriTemplatePartType uriTemplatePartType
+var valueUriTemplatePartType uriTemplatePartType = uriTemplatePartType("value_uri_template_part_type")
+var TextUriTemplatePartType uriTemplatePartType = uriTemplatePartType("text_uri_template_part_type")
 var uriTemplateOperators = []string{"+", "#", ".", "/", "?", "&"}
 
 type uriTemplatePart struct {
@@ -166,7 +166,7 @@ func (ut *UriTemplate) expandPart(part uriTemplatePart, variables UriVariables) 
 			var encodes []string
 			for _, ev := range variable {
 				encode, err := ut.encodeValue(ev, part.operator)
-				if err == nil {
+				if err != nil {
 					return "", fmt.Errorf("ut.encodeValue variable value:%s, %v", ev, err)
 				}
 				encodes = append(encodes, encode)
@@ -204,7 +204,7 @@ func (ut *UriTemplate) expandPart(part uriTemplatePart, variables UriVariables) 
 	var encodes []string
 	for _, ev := range variable {
 		encode, err := ut.encodeValue(ev, part.operator)
-		if err == nil {
+		if err != nil {
 			return "", fmt.Errorf("ut.encodeValue variable value:%s, %v", ev, err)
 		}
 		encodes = append(encodes, encode)
@@ -331,7 +331,11 @@ func (ut *UriTemplate) Match(uri string) (UriVariables, error) {
 		return nil, fmt.Errorf("ut.validateLength URI, %v", err)
 	}
 	pattern := "^"
-	namesExploded := make(map[string]bool)
+	type nameExplodedItem struct {
+		name     string
+		exploded bool
+	}
+	var namesExploded []nameExplodedItem
 	for _, part := range ut.parts {
 		if part.partType == TextUriTemplatePartType {
 			pattern += ut.escapeRegExp(part.name)
@@ -343,7 +347,7 @@ func (ut *UriTemplate) Match(uri string) (UriVariables, error) {
 		}
 		for name, partPattern := range patterns {
 			pattern += partPattern
-			namesExploded[name] = part.exploded
+			namesExploded = append(namesExploded, nameExplodedItem{name, part.exploded})
 		}
 	}
 	pattern += "$"
@@ -355,21 +359,20 @@ func (ut *UriTemplate) Match(uri string) (UriVariables, error) {
 	if err != nil {
 		return nil, fmt.Errorf("regexp.Compile, %v", err)
 	}
-	match := regex.FindAllString(uri, -1)
+	match := regex.FindStringSubmatch(uri)
 	if match == nil {
 		return nil, nil
 	}
 	result := UriVariables{}
-	var nameIndex int
-	for name, exploded := range namesExploded {
-		value := match[nameIndex+1]
-		cleanName := strings.ReplaceAll(name, "*", "")
-		if exploded && strings.Contains(value, ",") {
-			result[cleanName] = strings.Split(value, ",")
+	for i, cv := range namesExploded {
+		val := match[i+1]
+		cleanName := strings.ReplaceAll(cv.name, "*", "")
+		if cv.exploded && strings.Contains(val, ",") {
+			result[cleanName] = strings.Split(val, ",")
 		} else {
-			result[cleanName] = []string{value}
+			result[cleanName] = []string{val}
 		}
-		nameIndex++
 	}
+
 	return result, nil
 }

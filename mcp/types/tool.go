@@ -2,6 +2,7 @@ package types
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/victorvbello/gomcp/mcp/methods"
 )
@@ -17,7 +18,7 @@ type Tool struct {
 	InputSchema ToolInputSchema `json:"inputSchema"`
 	//An optional JSON Schema object defining the structure of the tool's output returned in
 	//the structuredContent field of a CallToolResult.
-	OutputSchema ToolOutputSchema `json:"outputSchema"`
+	OutputSchema *ToolOutputSchema `json:"outputSchema,omitempty"`
 	//Optional additional tool information.
 	Annotations *ToolAnnotations `json:"annotations,omitempty"`
 	//See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
@@ -164,6 +165,7 @@ func (ltr *ListToolsResult) TypeOfServerResult() int { return LIST_TOOLS_RESULT_
 func (ltr *ListToolsResult) TypeOfResultInterface() int {
 	return LIST_TOOLS_RESULT_RESULT_INTERFACE_TYPE
 }
+func (ltr *ListToolsResult) GetResult() Result { return ltr.Result }
 
 //The server's response to a tool call.
 //
@@ -191,6 +193,60 @@ type CallToolResult struct {
 
 func (ctr *CallToolResult) TypeOfServerResult() int    { return CALL_TOOL_RESULT_SERVER_RESULT_TYPE }
 func (ctr *CallToolResult) TypeOfResultInterface() int { return CALL_TOOL_RESULT_RESULT_INTERFACE_TYPE }
+func (ctr *CallToolResult) GetResult() Result          { return ctr.Result }
+
+func (ctr *CallToolResult) UnmarshalJSON(data []byte) error {
+	var aux struct {
+		MetaResult        Meta                   `json:"_meta"`
+		StructuredContent map[string]interface{} `json:"structuredContent,omitempty"`
+		IsError           *bool                  `json:"isError,omitempty"`
+		Content           json.RawMessage        `json:"content"`
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return fmt.Errorf("error unmarshaling global data: %v", err)
+	}
+	ctr.Result.Meta = aux.MetaResult
+	ctr.StructuredContent = aux.StructuredContent
+	ctr.IsError = aux.IsError
+	resultDataMap := []map[string]interface{}{}
+	if err := json.Unmarshal(aux.Content, &resultDataMap); err != nil {
+		return fmt.Errorf("error unmarshaling global data in slice: %v", err)
+	}
+	var resourcetFactoriesSortedKeys = []string{
+		"text",
+		"image",
+		"audio",
+		"resource",
+		"resource_link",
+	}
+	var resourceFactories = map[string]func() Content{
+		"text":          func() Content { return new(TextContent) },
+		"image":         func() Content { return new(ImageContent) },
+		"audio":         func() Content { return new(AudioContent) },
+		"resource":      func() Content { return new(EmbeddedResource) },
+		"resource_link": func() Content { return new(ResourceLink) },
+	}
+
+	for _, item := range resultDataMap {
+		for _, key := range resourcetFactoriesSortedKeys {
+			if typeValue, ok := item["type"]; ok {
+				contentType := typeValue.(string)
+				if builder, okBuilder := resourceFactories[contentType]; okBuilder {
+					rc := builder()
+					itemb, err := json.Marshal(item)
+					if err != nil {
+						return fmt.Errorf("error marshal itme key:%s err: %v", key, err)
+					}
+					if err := json.Unmarshal(itemb, &rc); err != nil {
+						return fmt.Errorf("error Unmarshal itme key:%s err: %v", key, err)
+					}
+					ctr.Content = append(ctr.Content, rc)
+				}
+			}
+		}
+	}
+	return nil
+}
 
 //Used by the client to invoke a tool provided by the server.
 //

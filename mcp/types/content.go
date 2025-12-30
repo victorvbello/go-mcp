@@ -90,3 +90,21 @@ func NewEmbeddedResource(Resource ResourceContents) *EmbeddedResource {
 	c.Resource = Resource
 	return c
 }
+
+//A resource that the server is capable of reading, included in a prompt or tool call result.
+//
+//Note: resource links returned by tools are not guaranteed to appear in the results of `resources/list` requests.
+type ResourceLink struct {
+	//type: "resource_link"
+	BaseContent
+	Resource
+}
+
+func (e *ResourceLink) TypeOfContent() string { return EMBEDDED_RESOURCE_CONTENT_TYPE }
+
+func NewResourceLink(Resource Resource) *ResourceLink {
+	c := new(ResourceLink)
+	c.Type = "resource_link"
+	c.Resource = Resource
+	return c
+}

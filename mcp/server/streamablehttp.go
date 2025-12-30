@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -88,7 +89,7 @@ func NewStreamableHTTPServerTransport(opts StreamableHTTPServerTransportOptions)
 //This method should only be called after callbacks are installed, or else messages may be lost.
 //
 //NOTE: This method should not be called explicitly when using Client, Server, or Protocol classes, as they will implicitly call start().
-func (s *StreamableHTTPServerTransport) Start() error {
+func (s *StreamableHTTPServerTransport) Start(ctx context.Context) error {
 	if s.started {
 		return fmt.Errorf("transport already started")
 	}

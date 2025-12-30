@@ -41,6 +41,7 @@ type EmptyResult Result
 func (ep *EmptyResult) TypeOfClientResult() int    { return EMPTY_RESULT_CLIENT_RESULT_TYPE }
 func (ep *EmptyResult) TypeOfServerResult() int    { return EMPTY_RESULT_SERVER_RESULT_TYPE }
 func (ep *EmptyResult) TypeOfResultInterface() int { return EMPTY_RESULT_RESULT_INTERFACE_TYPE }
+func (ep *EmptyResult) GetResult() Result          { return Result(*ep) }
 
 type Result struct {
 	//Attach additional metadata to their notifications.
@@ -137,6 +138,7 @@ func (ir *InitializeResult) TypeOfServerResult() int { return INITIALIZE_RESULT_
 func (ir *InitializeResult) TypeOfResultInterface() int {
 	return INITIALIZE_RESULT_RESULT_INTERFACE_TYPE
 }
+func (ir *InitializeResult) GetResult() Result { return ir.Result }
 
 type PaginatedResult struct {
 	Result
@@ -147,9 +149,11 @@ type PaginatedResult struct {
 }
 
 func (pr *PaginatedResult) TypeOfResultInterface() int { return PAGINATED_RESULT_RESULT_INTERFACE_TYPE }
+func (pr *PaginatedResult) GetResult() Result          { return pr.Result }
 
 type ResultInterface interface {
 	TypeOfResultInterface() int
+	GetResult() Result
 }
 
 type ClientResult interface {
@@ -158,4 +162,71 @@ type ClientResult interface {
 
 type ServerResult interface {
 	TypeOfServerResult() int
+}
+
+//Configuration for list changed notification handlers.
+//
+//Use this to configure handlers for tools, prompts, and resources list changes
+//when creating a client.
+//
+//Note: Handlers are only activated if the server advertises the corresponding
+//`listChanged` capability (e.g., `tools.listChanged: true`). If the server
+//doesn't advertise this capability, the handler will not be set up.
+type ClientCapabilitiesListChangedHandlers struct {
+	//Handler for tool list changes.
+	Tools *ClientCapabilitiesListChangedToolsOptions
+	//Handler for prompt list changes.
+	Prompts *ClientCapabilitiesListChangedPromptOptions
+	//Handler for resource list changes.
+	Resources *ClientCapabilitiesListChangedResourcesOptions
+}
+type ClientCapabilitiesListChangedToolsCallback = func(items []Tool, err error)
+
+//Options for subscribing to list changed notifications tools
+type ClientCapabilitiesListChangedToolsOptions struct {
+	//If true, the list will be refreshed automatically when a list changed notification is received.
+	//default true
+	AutoRefresh bool
+	//Debounce time in milliseconds. Set to 0 to disable.
+	//@default 300
+	DebounceMs int
+	//Callback invoked when the list changes.
+
+	//If autoRefresh is true, items contains the updated list.
+	//If autoRefresh is false, items is null (caller should refresh manually).
+	OnChanged ClientCapabilitiesListChangedToolsCallback
+}
+
+type ClientCapabilitiesListChangedPromptCallback = func(items []Tool, err error)
+
+//Options for subscribing to list changed notifications prompts
+type ClientCapabilitiesListChangedPromptOptions struct {
+	//If true, the list will be refreshed automatically when a list changed notification is received.
+	//default true
+	AutoRefresh bool
+	//Debounce time in milliseconds. Set to 0 to disable.
+	//@default 300
+	DebounceMs int
+	//Callback invoked when the list changes.
+
+	//If autoRefresh is true, items contains the updated list.
+	//If autoRefresh is false, items is null (caller should refresh manually).
+	OnChanged ClientCapabilitiesListChangedPromptCallback
+}
+
+type ClientCapabilitiesListChangedResourcesCallback = func(items []Tool, err error)
+
+//Options for subscribing to list changed notifications resources
+type ClientCapabilitiesListChangedResourcesOptions struct {
+	//If true, the list will be refreshed automatically when a list changed notification is received.
+	//default true
+	AutoRefresh bool
+	//Debounce time in milliseconds. Set to 0 to disable.
+	//@default 300
+	DebounceMs int
+	//Callback invoked when the list changes.
+
+	//If autoRefresh is true, items contains the updated list.
+	//If autoRefresh is false, items is null (caller should refresh manually).
+	OnChanged ClientCapabilitiesListChangedResourcesCallback
 }

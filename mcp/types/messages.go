@@ -195,11 +195,12 @@ func (msg RawMessage) ToJSONRPCError() (*JSONRPCError, error) {
 	var res JSONRPCError
 	b, err := json.Marshal(msg)
 	if err != nil {
-		return nil, fmt.Errorf("error marshalling error type: %v", err)
+		return nil, fmt.Errorf("error marshalling errorType data: %s error: %v", string(b), err)
 	}
+	res.Error = new(Error)
 	err = json.Unmarshal(b, &res)
 	if err != nil {
-		return nil, fmt.Errorf("error unmarshalling error type: %v", err)
+		return nil, fmt.Errorf("error unmarshalling errorType data: %s error: %v", string(b), err)
 	}
 	return &res, nil
 }

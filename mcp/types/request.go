@@ -122,6 +122,29 @@ type ClientCapabilities struct {
 	Sampling interface{} `json:"sampling,omitempty"`
 }
 
+func (cc *ClientCapabilities) UpdateAll(new *ClientCapabilities) {
+	capUpdaters := []func(dst, src *ClientCapabilities){
+		func(dst, src *ClientCapabilities) {
+			if src.Experimental != nil {
+				dst.Experimental = src.Experimental
+			}
+		},
+		func(dst, src *ClientCapabilities) {
+			if src.Sampling != nil {
+				dst.Sampling = src.Sampling
+			}
+		},
+		func(dst, src *ClientCapabilities) {
+			if src.Roots != nil {
+				dst.Roots = src.Roots
+			}
+		},
+	}
+	for _, update := range capUpdaters {
+		update(cc, new)
+	}
+}
+
 //A ping, issued by either the server or the client, to check that the other party is still alive. The receiver must promptly respond, or else may be disconnected.
 //
 //Only method: METHOD_REQUEST_PING
@@ -158,10 +181,17 @@ type PaginatedRequestParams struct {
 //Only method: METHOD_REQUEST_SUBSCRIBE_RESOURCES
 type SubscribeRequest struct {
 	Request
-	Params SubscribeRequestParams `json:"params"`
+	Params *SubscribeRequestParams `json:"params"`
 }
 
 func (sr *SubscribeRequest) TypeOfClientRequest() int { return SUBSCRIBE_REQUEST_CLIENT_REQUEST_TYPE }
+
+func NewSubscribeRequest(params *SubscribeRequestParams) *SubscribeRequest {
+	sr := new(SubscribeRequest)
+	sr.Method = methods.METHOD_REQUEST_SUBSCRIBE_RESOURCES
+	sr.Params = params
+	return sr
+}
 
 type SubscribeRequestParams struct {
 	BaseRequestParams
@@ -174,11 +204,17 @@ type SubscribeRequestParams struct {
 //Only method: METHOD_REQUEST_UNSUBSCRIBE_RESOURCES
 type UnsubscribeRequest struct {
 	Request
-	Params UnsubscribeRequestParams `json:"params"`
+	Params *UnsubscribeRequestParams `json:"params"`
 }
 
 func (ur *UnsubscribeRequest) TypeOfClientRequest() int {
 	return UNSUBSCRIBE_REQUEST_CLIENT_REQUEST_TYPE
+}
+func NewUnsubscribeRequest(params *UnsubscribeRequestParams) *UnsubscribeRequest {
+	ur := new(UnsubscribeRequest)
+	ur.Method = methods.METHOD_REQUEST_UNSUBSCRIBE_RESOURCES
+	ur.Params = params
+	return ur
 }
 
 type UnsubscribeRequestParams struct {

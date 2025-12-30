@@ -1,8 +1,10 @@
 package types
 
 import (
+	"encoding/json"
+	"fmt"
+
 	"github.com/victorvbello/gomcp/mcp/methods"
-	"github.com/victorvbello/gomcp/mcp/utils"
 )
 
 const (
@@ -34,7 +36,7 @@ type Resource struct {
 type ResourceTemplate struct {
 	BaseMetadata
 	//A URI template (according to RFC 6570) that can be used to construct resource URIs.
-	URITemplate utils.UriTemplate `json:"uriTemplate"`
+	URITemplate string `json:"uriTemplate"`
 	//A description of what this template is for.
 	//
 	//This can be used by clients to improve the LLM's understanding of available resources. It can be thought of like a "hint" to the model.
@@ -49,6 +51,8 @@ type ResourceTemplate struct {
 //The contents of a specific resource or sub-resource.
 type ResourceContents interface {
 	TypeOfResource() int
+	GetContent() string
+	GetBaseResourceContents() BaseResourceContents
 }
 
 //The base struct for ResourceContents
@@ -65,7 +69,11 @@ type TextResourceContents struct {
 	Text string `json:"text"`
 }
 
-func (TextResourceContents) TypeOfResource() int { return TEXT_RESOURCE_CONTENTS_TYPE }
+func (tr *TextResourceContents) TypeOfResource() int { return TEXT_RESOURCE_CONTENTS_TYPE }
+func (tr *TextResourceContents) GetContent() string  { return tr.Text }
+func (tr *TextResourceContents) GetBaseResourceContents() BaseResourceContents {
+	return tr.BaseResourceContents
+}
 
 type BlobResourceContents struct {
 	BaseResourceContents
@@ -73,7 +81,11 @@ type BlobResourceContents struct {
 	Blob string `json:"blob"`
 }
 
-func (BlobResourceContents) TypeOfResource() int { return BLOB_RESOURCE_CONTENTS_TYPE }
+func (br *BlobResourceContents) TypeOfResource() int { return BLOB_RESOURCE_CONTENTS_TYPE }
+func (br *BlobResourceContents) GetContent() string  { return br.Blob }
+func (br *BlobResourceContents) GetBaseResourceContents() BaseResourceContents {
+	return br.BaseResourceContents
+}
 
 //An optional notification from the server to the client, informing it that the list of resources it can read from has changed. This may be issued by servers without any previous subscription from the client.
 //
@@ -225,6 +237,7 @@ func (lrr *ListResourcesResult) TypeOfServerResult() int {
 func (lrr *ListResourcesResult) TypeOfResultInterface() int {
 	return LIST_RESOURCES_RESULT_RESULT_INTERFACE_TYPE
 }
+func (lrr *ListResourcesResult) GetResult() Result { return lrr.Result }
 
 //The server's response to a resources/templates/list request from the client.
 type ListResourceTemplatesResult struct {
@@ -235,10 +248,10 @@ type ListResourceTemplatesResult struct {
 func (lrt *ListResourceTemplatesResult) TypeOfServerResult() int {
 	return LIST_RESOURCE_TEMPLATES_RESULT_SERVER_RESULT_TYPE
 }
-
 func (lrt *ListResourceTemplatesResult) TypeOfResultInterface() int {
 	return LIST_RESOURCE_TEMPLATES_RESULT_RESULT_INTERFACE_TYPE
 }
+func (lrt *ListResourceTemplatesResult) GetResult() Result { return lrt.Result }
 
 //The server's response to a resources/read request from the client.
 type ReadResourceResult struct {
@@ -252,6 +265,49 @@ func (rrr *ReadResourceResult) TypeOfServerResult() int {
 }
 func (rrr *ReadResourceResult) TypeOfResultInterface() int {
 	return READ_RESOURCE_RESULT_RESULT_INTERFACE_TYPE
+}
+func (rrr *ReadResourceResult) GetResult() Result { return rrr.Result }
+
+func (rr *ReadResourceResult) UnmarshalJSON(data []byte) error {
+	var aux struct {
+		MetaResult Meta            `json:"_meta"`
+		Contents   json.RawMessage `json:"contents"`
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return fmt.Errorf("error unmarshaling global data: %v", err)
+	}
+	rr.Result.Meta = aux.MetaResult
+	resultDataMap := []map[string]interface{}{}
+	if err := json.Unmarshal(aux.Contents, &resultDataMap); err != nil {
+		return fmt.Errorf("error unmarshaling global data in slice: %v", err)
+	}
+	var resourcetFactoriesSortedKeys = []string{
+		"text",
+		"blob",
+	}
+	var resourceFactories = map[string]func() ResourceContents{
+		"text": func() ResourceContents { return new(TextResourceContents) },
+		"blob": func() ResourceContents { return new(BlobResourceContents) },
+	}
+
+	for _, item := range resultDataMap {
+		for _, key := range resourcetFactoriesSortedKeys {
+			if _, ok := item[key]; ok {
+				if builder, okBuilder := resourceFactories[key]; okBuilder {
+					rc := builder()
+					itemb, err := json.Marshal(item)
+					if err != nil {
+						return fmt.Errorf("error marshal itme key:%s err: %v", key, err)
+					}
+					if err := json.Unmarshal(itemb, &rc); err != nil {
+						return fmt.Errorf("error Unmarshal itme key:%s err: %v", key, err)
+					}
+					rr.Contents = append(rr.Contents, rc)
+				}
+			}
+		}
+	}
+	return nil
 }
 
 //A reference to a resource or resource template definition.

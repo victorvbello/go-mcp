@@ -59,15 +59,15 @@ func (e *Error) ToError() error {
 }
 
 type McpError struct {
-	Err Error
+	Error
 }
 
 func (e *McpError) TypeOfError() int          { return MCP_ERROR_ERROR_INTERFACE_TYPE }
-func (e *McpError) GetErrorCode() int         { return e.Err.Code }
-func (e *McpError) GetErrorMessage() string   { return e.Err.Message }
-func (e *McpError) GetErrorData() interface{} { return e.Err.Data }
+func (e *McpError) GetErrorCode() int         { return e.Error.Code }
+func (e *McpError) GetErrorMessage() string   { return e.Error.Message }
+func (e *McpError) GetErrorData() interface{} { return e.Error.Data }
 func (e *McpError) ToError() error {
-	return fmt.Errorf("code: %d, message: %s, data: %v", e.Err.Code, e.Err.Message, e.Err.Data)
+	return fmt.Errorf("code: %d, message: %s, data: %v", e.Error.Code, e.Error.Message, e.Error.Data)
 }
 
 func NewMcpError(code int, msg string, data interface{}) *McpError {

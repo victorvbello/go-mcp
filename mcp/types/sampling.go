@@ -48,6 +48,7 @@ func (cmr *CreateMessageResult) TypeOfClientResult() int {
 func (cmr *CreateMessageResult) TypeOfResultInterface() int {
 	return CREATE_MESSAGE_RESULT_RESULT_INTERFACE_TYPE
 }
+func (cmr *CreateMessageResult) GetResult() Result { return cmr.Result }
 
 type CreateMessageParams struct {
 	BaseRequestParams
@@ -81,14 +82,13 @@ func (sm *SamplingMessage) UnmarshalJSON(data []byte) error {
 		Content json.RawMessage `json:"content"`
 	}
 	if err := json.Unmarshal(data, &meta); err != nil {
-		return fmt.Errorf("error unmarshaling global meta: %v", err)
+		return fmt.Errorf("error SamplingMessage unmarshaling global meta: %v", err)
 	}
 	sm.Role = meta.Role
 	contentDataMap := make(map[string]interface{})
 	if err := json.Unmarshal(meta.Content, &contentDataMap); err != nil {
-		return fmt.Errorf("error unmarshaling global data in map: %v", err)
+		return fmt.Errorf("error SamplingMessage unmarshaling global data in map: %v", err)
 	}
-
 	var c Content
 	var contentFactories = map[string]func() Content{
 		"text":     func() Content { return new(TextContent) },
@@ -96,7 +96,6 @@ func (sm *SamplingMessage) UnmarshalJSON(data []byte) error {
 		"audio":    func() Content { return new(AudioContent) },
 		"resource": func() Content { return new(EmbeddedResource) },
 	}
-
 	for key, builder := range contentFactories {
 		if _, ok := contentDataMap[key]; ok {
 			c = builder()
@@ -108,7 +107,7 @@ func (sm *SamplingMessage) UnmarshalJSON(data []byte) error {
 	}
 
 	if err := json.Unmarshal(meta.Content, &c); err != nil {
-		return fmt.Errorf("error unmarshaling err: %v", err)
+		return fmt.Errorf("error SamplingMessage unmarshaling err: %v", err)
 	}
 	sm.Content = c
 	return nil

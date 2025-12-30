@@ -40,13 +40,10 @@ func NewMcpServer(serverInfo types.Implementation, opts ServerOptions) (*McpServ
 }
 
 func (mcps *McpServer) wrapperOnErrorServer(fn func()) error {
-	chanError := make(chan error)
-	mcps.server.SetOnErrorCallBack(func(err error) {
-		chanError <- err
-	})
+	mcps.server.wrapperOnErrorChan = make(chan error)
 	fn()
-	sError := <-chanError
-	mcps.server.SetOnErrorCallBack(nil)
+	sError := <-mcps.server.wrapperOnErrorChan
+	mcps.server.wrapperOnErrorChan = nil
 	return sError
 }
 
@@ -115,7 +112,7 @@ func (mcps *McpServer) setToolRequestHandlers() error {
 					IsError: &isErr,
 				}
 			}
-			if tool.OutputSchema.Type != "" && result.IsError != nil && !*result.IsError {
+			if tool.OutputSchema != nil && tool.OutputSchema.Type != "" && result.IsError != nil && !*result.IsError {
 				if result.StructuredContent == nil {
 					err := types.NewMcpError(types.ERROR_CODE_INVALID_PARAMS,
 						fmt.Sprintf("tool %s has an output schema but no structured content was provided", req.Params.Name), nil)
@@ -268,6 +265,7 @@ func (mcps *McpServer) setResourceRequestHandlers() error {
 					URI: uri,
 				}
 				nR.Name = rr.Name
+				nR.Title = rr.Title
 				if rr.Metadata != nil {
 					nR.Meta = rr.Metadata.Meta
 				}
@@ -278,23 +276,25 @@ func (mcps *McpServer) setResourceRequestHandlers() error {
 				if listCallback == nil {
 					continue
 				}
-				result, err := listCallback(extra)
+				resultTemplate, err := listCallback(extra)
 				if err != nil {
 					err := types.NewMcpError(
 						types.ERROR_CODE_INVALID_PARAMS,
 						fmt.Sprintf("listCallback of %s, %v", uri, err), nil)
 					return nil, err.ToError()
 				}
-				if result == nil {
+				if resultTemplate == nil {
 					err := types.NewMcpError(
 						types.ERROR_CODE_INVALID_PARAMS,
 						fmt.Sprintf("listCallback of %s, empty result", uri), nil)
 					return nil, err.ToError()
 				}
-				for _, resource := range result.Resources {
+				for _, resource := range resultTemplate.Resources {
 					newResource := resource
+					newResource.Title = template.Title
 					if template.Metadata != nil {
 						newResource.Meta = template.Metadata.Meta
+						newResource.Name = template.Metadata.Name
 					}
 					templateResources = append(templateResources, newResource)
 				}
@@ -311,10 +311,11 @@ func (mcps *McpServer) setResourceRequestHandlers() error {
 			for name, template := range mcps.registeredResourceTemplates.GetAll() {
 				uri := template.ResourceTemplate.GetUriTemplate()
 				nrt := types.ResourceTemplate{
-					URITemplate: uri,
+					URITemplate: uri.String(),
 					Meta:        template.Metadata.Meta,
 				}
 				nrt.Name = name
+				nrt.Title = template.Metadata.Title
 				if template.Metadata != nil {
 					nrt.Meta = template.Metadata.Meta
 				}
@@ -636,7 +637,7 @@ type RegisterToolOpts struct {
 	Title        string
 	Description  string
 	InputSchema  types.ToolInputSchema
-	OutputSchema types.ToolOutputSchema
+	OutputSchema *types.ToolOutputSchema
 	Annotations  *types.ToolAnnotations
 	Callback     ToolCallback
 }
@@ -685,7 +686,7 @@ func (mcps *McpServer) RegisterTool(opts RegisterToolOpts) (*RegisteredTool, err
 		if updates.ParamsSchema.Type != "" {
 			result.InputSchema = updates.ParamsSchema
 		}
-		if updates.OutputSchema.Type != "" {
+		if updates.OutputSchema != nil && updates.OutputSchema.Type != "" {
 			result.OutputSchema = updates.OutputSchema
 		}
 		if updates.Callback != nil {
@@ -834,10 +835,10 @@ func (mcps *McpServer) Connect(ctx context.Context, transport shared.Transport) 
 
 //Closes the connection.
 func (mcps *McpServer) Close() error {
-	connError := mcps.wrapperOnErrorServer(func() {
+	closeError := mcps.wrapperOnErrorServer(func() {
 		mcps.server.Close()
 	})
-	return connError
+	return closeError
 }
 
 //Get server read only

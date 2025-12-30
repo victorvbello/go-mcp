@@ -41,11 +41,10 @@ func NewProtocol(opts *ProtocolOptions, pi ProtocolInterface) *Protocol {
 		notificationHandlers: newMuxMapNotificationHandlers(),
 		progressHandlers:     newMuxMapProgressHandlers(),
 		timeoutInfo:          newMuxMapTimeoutConfig(),
-		logger:               utils.NewLoggerService(),
+		logger:               utils.NewLoggerService("protocol"),
 		options:              opts,
 	}
 
-	newProtocol.logger = utils.NewLoggerService()
 	newProtocol.SetNotificationHandler(types.NewCancelledNotification(nil), func(ctx context.Context, notification types.NotificationInterface) error {
 		notify := notification.(*types.CancelledNotification)
 		newProtocol.logger.Info(utils.LogFields{"reason": notify.Params.Reason}, "cancelled notification")
@@ -132,7 +131,7 @@ func (p *Protocol) Connect(ctx context.Context, transport Transport) {
 		}
 	})
 
-	err := p.transport.Start()
+	err := p.transport.Start(ctx)
 	if err != nil {
 		p.onError(fmt.Errorf("transport.Start %v", err))
 	}
@@ -327,10 +326,13 @@ func (p *Protocol) GetTransport() Transport {
 }
 
 func (p *Protocol) Close() {
+	fmt.Println("--protocol close--")
 	err := p.transport.Close()
 	if err != nil {
 		p.onError(fmt.Errorf("transport.Close %v", err))
+		return
 	}
+	p.onError(nil)
 }
 
 //Sends a request and wait for a response.
@@ -378,7 +380,7 @@ func (p *Protocol) Request(request types.RequestInterface, opts *RequestOptions)
 		select {
 		case resultReturn := <-returnChan:
 			gResp = resultReturn.r
-			if gErr != nil {
+			if resultReturn.e != nil {
 				gErr = resultReturn.e
 			}
 		}
@@ -449,7 +451,6 @@ func (p *Protocol) Request(request types.RequestInterface, opts *RequestOptions)
 		}()
 		return err
 	})
-
 	timeout := safeOpts.Timeout
 	if timeout == 0 {
 		timeout = DEFAULT_REQUEST_TIMEOUT_MSEC

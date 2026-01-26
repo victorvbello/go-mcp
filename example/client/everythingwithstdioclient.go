@@ -30,7 +30,6 @@ func ExampleEverythingWithSTDIOClient() {
 		logger.Fatal(nil, fmt.Sprintf("MCPClient.NewClient %v", err))
 	}
 	mcpClient.SetOnErrorCallBack(func(err error) {
-		fmt.Println("client SetOnErrorCallBack", err)
 		if err := recover(); err != nil {
 			debug.PrintStack()
 		}
@@ -39,7 +38,7 @@ func ExampleEverythingWithSTDIOClient() {
 	transport := MCPClient.NewStdioClientTransport(MCPClient.StdioServerParameters{
 		Command: "go",
 		Args:    []string{"run", ".", "-t", "server"},
-	})
+	}, true)
 	logger.Info(nil, "MCP client is running...")
 
 	mcpClient.SetNotificationHandler(types.NewLoggingMessageNotification(nil), func(ctx context.Context, notification types.NotificationInterface) error {
@@ -49,13 +48,44 @@ func ExampleEverythingWithSTDIOClient() {
 		return nil
 	})
 	mcpClient.SetNotificationHandler(types.NewResourceListChangedNotification(nil), func(ctx context.Context, notification types.NotificationInterface) error {
-		logger.Info(nil, "Resource list changed notification received!")
+		logger.Info(nil, "[Resource list changed ] Notification received!")
 		resourcesResult, err := mcpClient.ListResources(types.PaginatedRequestParams{}, nil)
 		if err != nil {
 			logger.Error(nil, fmt.Sprintf("mcpClient.ListResources in ResourceListChangedNotification %v", err))
 		}
-		logger.Info(nil, fmt.Sprintf("Available resources count: %d", len(resourcesResult.Resources)))
+		if resourcesResult == nil {
+			logger.Error(nil, "resourcesResult is nil in ResourceListChangedNotification")
+			return nil
+		}
+		logger.Info(nil, fmt.Sprintf("[Resource list changed] Available resources count: %d", len(resourcesResult.Resources)))
 		return nil
+	})
+	mcpClient.SetRequestHandler(types.NewCreateMessageRequest(nil), func(request types.RequestInterface, extra *shared.RequestHandlerExtra) (types.ResultInterface, error) {
+		logger.Info(nil, "[Create message] Request received!")
+		req, okType := request.(*types.CreateMessageRequest)
+		if !okType {
+			err := fmt.Errorf("invalid request type CreateMessageRequest")
+			return nil, err
+		}
+		var finalMsg string
+		for _, ms := range req.Params.Messages {
+			switch ms.Content.TypeOfContent() {
+			case types.TEXT_CONTENT_TYPE:
+				realMsg := ms.Content.(*types.TextContent)
+				finalMsg += realMsg.Text
+			default:
+				realMsg := ms.Content.(*types.TextContent)
+				finalMsg += realMsg.Text
+			}
+		}
+
+		result := &types.CreateMessageResult{
+			StopReason: "endTurn",
+		}
+		result.Role = "assistant"
+
+		result.Content = types.NewTextContent("local-testing-response")
+		return result, nil
 	})
 	ctx := context.Background()
 	err = mcpClient.Connect(ctx, transport, nil)
@@ -80,6 +110,7 @@ func ExampleEverythingWithSTDIOClient() {
 
 	//Get resources list
 	logger.Info(nil, "Get resources list")
+	resourceListURIMap := make(map[string]string)
 	resourceList, err := mcpClient.ListResources(types.PaginatedRequestParams{}, &shared.RequestOptions{})
 	if err != nil {
 		logger.Error(nil, fmt.Sprintf("mcpClient.ListResources %v", err))
@@ -97,6 +128,7 @@ func ExampleEverythingWithSTDIOClient() {
 			crb := content.GetBaseResourceContents()
 			logger.Info(utilsLogger.LogFields{"mime": crb.MIMEType, "content": strContent[0:20] + "..."}, fmt.Sprintf("[%s]", crb.URI))
 		}
+		resourceListURIMap[r.Name] = r.URI
 	}
 
 	//Get resources template list
@@ -201,7 +233,7 @@ func ExampleEverythingWithSTDIOClient() {
 		sumToolResult.StructuredContent["b"],
 		sumToolResult.StructuredContent["result"]))
 
-	//Call tool sum
+	//Call tool check-new-resources
 	logger.Info(nil, "Get tool check-new-resources")
 	_, err = mcpClient.CallTool(
 		types.CallToolRequestParams{
@@ -213,6 +245,69 @@ func ExampleEverythingWithSTDIOClient() {
 		logger.Error(nil, fmt.Sprintf("mcpClient.CallTool check-new-resources %v", err))
 	}
 
-	time.Sleep(2 * time.Second)
+	//Call tool check-the-weather-today
+	logger.Info(nil, "Get tool check-the-weather-today")
+	weatherResult, err := mcpClient.CallTool(
+		types.CallToolRequestParams{
+			Name: "check-the-weather-today",
+			Arguments: map[string]interface{}{
+				"city": "Santiago",
+			},
+		},
+		&shared.RequestOptions{},
+	)
+	if err != nil {
+		logger.Error(nil, fmt.Sprintf("mcpClient.CallTool check-the-weather-today %v", err))
+	}
+	for _, content := range weatherResult.Content {
+		contentType := content.TypeOfContent()
+		if contentType != types.TEXT_CONTENT_TYPE {
+			continue
+		}
+		logger.Info(utilsLogger.LogFields{"content": content.(*types.TextContent).Text}, "The result of check-the-weather-today tool is:")
+	}
+
+	//Call tool generate-wealthy-plan
+	logger.Info(nil, "Get tool generate-wealthy-plan")
+	wealthyPlanResult, err := mcpClient.CallTool(
+		types.CallToolRequestParams{
+			Name: "generate-wealthy-plan",
+			Arguments: map[string]interface{}{
+				"salary":    "3000$",
+				"frequency": "Monthly",
+			},
+		},
+		&shared.RequestOptions{},
+	)
+	if err != nil {
+		logger.Error(nil, fmt.Sprintf("mcpClient.CallTool generate-wealthy-plan %v", err))
+	}
+	for _, content := range wealthyPlanResult.Content {
+		contentType := content.TypeOfContent()
+		if contentType != types.TEXT_CONTENT_TYPE {
+			continue
+		}
+		logger.Info(utilsLogger.LogFields{"content": content.(*types.TextContent).Text}, "The result of generate-wealthy-plan tool is:")
+	}
+
+	// Notification handler for the resource terms-and-conditions.txt when it has been updated
+	mcpClient.SetNotificationHandler(types.NewResourceUpdatedNotification(&types.ResourceUpdatedNotificationParams{URI: resourceListURIMap["terms-and-conditions"]}), func(ctx context.Context, notification types.NotificationInterface) error {
+		logger.Info(nil, "[Resource terms-and-conditions updated] Notification received!")
+		logger.Info(nil, "[Resource terms-and-conditions updated] Method:"+notification.GetNotification().Method)
+
+		_, err = mcpClient.UnsubscribeResource(types.UnsubscribeRequestParams{URI: resourceListURIMap["terms-and-conditions"]}, nil)
+		if err != nil {
+			logger.Error(nil, fmt.Sprintf("mcpClient.UnsubscribeResource terms-and-conditions %v", err))
+		}
+		return nil
+	})
+
+	// Resource subscribe terms-and-conditions
+	logger.Info(nil, "Resource subscribe terms-and-conditions")
+	_, err = mcpClient.SubscribeResource(types.SubscribeRequestParams{URI: resourceListURIMap["terms-and-conditions"]}, &shared.RequestOptions{})
+	if err != nil {
+		logger.Error(nil, fmt.Sprintf("mcpClient.SubscribeResource terms-and-conditions %v", err))
+	}
+	time.Sleep(4 * time.Second)
 	mcpClient.Close()
 }

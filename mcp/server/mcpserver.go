@@ -8,9 +8,9 @@ import (
 	"github.com/victorvbello/gomcp/mcp/types"
 )
 
-//High-level MCP server that provides a simpler API for working with resources, tools, and prompts.
-//For advanced usage (like sending notifications or setting custom request handlers), use the underlying
-//Server instance available via the `server` property.
+// High-level MCP server that provides a simpler API for working with resources, tools, and prompts.
+// For advanced usage (like sending notifications or setting custom request handlers), use the underlying
+// Server instance available via the `server` property.
 type McpServer struct {
 	//The underlying Server instance, useful for advanced operations like sending notifications.
 	server                       *Server
@@ -496,8 +496,8 @@ type RegisterResourceOpts struct {
 	Callback ReadResourceCallback
 }
 
-//Registers a resource `name` at a fixed URI, which will use the given callback to respond to read requests.
-//name and uri are required
+// Registers a resource `name` at a fixed URI, which will use the given callback to respond to read requests.
+// name and uri are required
 func (mcps *McpServer) RegisterResource(opts RegisterResourceOpts) (*RegisteredResource, error) {
 	if opts.Name == "" || opts.Uri == "" {
 		return nil, fmt.Errorf("name and uri are required")
@@ -569,8 +569,8 @@ type RegisterResourceTemplateOpts struct {
 	Callback ReadResourceTemplateCallback
 }
 
-//Registers a resource `name` with a template pattern, which will use the given callback to respond to read requests.
-//name is required
+// Registers a resource `name` with a template pattern, which will use the given callback to respond to read requests.
+// name is required
 func (mcps *McpServer) RegisterResourceTemplate(opts RegisterResourceTemplateOpts) (*RegisteredResourceTemplate, error) {
 	if opts.Name == "" {
 		return nil, fmt.Errorf("name is required")
@@ -642,8 +642,8 @@ type RegisterToolOpts struct {
 	Callback     ToolCallback
 }
 
-//Registers a tool with a config object and callback.
-//name is required
+// Registers a tool with a config object and callback.
+// name is required
 func (mcps *McpServer) RegisterTool(opts RegisterToolOpts) (*RegisteredTool, error) {
 	if opts.Name == "" {
 		return nil, fmt.Errorf("name is required")
@@ -721,8 +721,8 @@ type RegisterPromptOpts struct {
 	Callback    PromptCallback
 }
 
-//Registers a prompt with a config object and callback.
-//name is required
+// Registers a prompt with a config object and callback.
+// name is required
 func (mcps *McpServer) RegisterPrompt(opts RegisterPromptOpts) (*RegisteredPrompt, error) {
 	if opts.Name == "" {
 		return nil, fmt.Errorf("name is required")
@@ -784,13 +784,24 @@ func (mcps *McpServer) RegisterPrompt(opts RegisterPromptOpts) (*RegisteredPromp
 	return &result, nil
 }
 
-//Checks if the server is connected to a transport.
-//returns True if the server is connected
+// Checks if the server is connected to a transport.
+// returns True if the server is connected
 func (mcps *McpServer) IsConnected() bool {
 	return mcps.server.GetTransport() != nil
 }
 
-//Sends a resource list changed event to the client, if connected.
+// Sends a resource updated event to the client, if connected.
+func (mcps *McpServer) SendResourceUpdated(params types.ResourceUpdatedNotificationParams) error {
+	if !mcps.IsConnected() {
+		return nil
+	}
+	if err := mcps.server.SendResourceUpdated(params); err != nil {
+		return fmt.Errorf("mcps.server.SendResourceUpdated, %v", err)
+	}
+	return nil
+}
+
+// Sends a resource list changed event to the client, if connected.
 func (mcps *McpServer) SendResourceListChanged() error {
 	if !mcps.IsConnected() {
 		return nil
@@ -801,7 +812,7 @@ func (mcps *McpServer) SendResourceListChanged() error {
 	return nil
 }
 
-//Sends a tool list changed event to the client, if connected.
+// Sends a tool list changed event to the client, if connected.
 func (mcps *McpServer) SendToolListChanged() error {
 	if !mcps.IsConnected() {
 		return nil
@@ -812,7 +823,7 @@ func (mcps *McpServer) SendToolListChanged() error {
 	return nil
 }
 
-//Sends a prompt list changed event to the client, if connected.
+// Sends a prompt list changed event to the client, if connected.
 func (mcps *McpServer) SendPromptListChanged() error {
 	if !mcps.IsConnected() {
 		return nil
@@ -823,9 +834,9 @@ func (mcps *McpServer) SendPromptListChanged() error {
 	return nil
 }
 
-//Attaches to the given transport, starts it, and starts listening for messages.
+// Attaches to the given transport, starts it, and starts listening for messages.
 //
-//The `server` object assumes ownership of the Transport, replacing any callbacks that have already been set, and expects that it is the only user of the Transport instance going forward.
+// The `server` object assumes ownership of the Transport, replacing any callbacks that have already been set, and expects that it is the only user of the Transport instance going forward.
 func (mcps *McpServer) Connect(ctx context.Context, transport shared.Transport) error {
 	connError := mcps.wrapperOnErrorServer(func() {
 		mcps.server.Protocol.Connect(ctx, transport)
@@ -833,7 +844,7 @@ func (mcps *McpServer) Connect(ctx context.Context, transport shared.Transport) 
 	return connError
 }
 
-//Closes the connection.
+// Closes the connection.
 func (mcps *McpServer) Close() error {
 	closeError := mcps.wrapperOnErrorServer(func() {
 		mcps.server.Close()
@@ -841,13 +852,13 @@ func (mcps *McpServer) Close() error {
 	return closeError
 }
 
-//Get server read only
+// Get server read only
 func (mcps *McpServer) GetServer() *Server {
 	return mcps.server
 }
 
-//Add external Action on onInitialized
-//Callback for when initialization has fully completed (i.e., the client has sent an `initialized` notification).
+// Add external Action on onInitialized
+// Callback for when initialization has fully completed (i.e., the client has sent an `initialized` notification).
 func (mcps *McpServer) SetOnInitialized(fn func() error) {
 	mcps.server.OnInitialized = fn
 }

@@ -11,7 +11,7 @@ import (
 func main() {
 	var startType string
 
-	flag.StringVar(&startType, "t", "type", "Start type client/server")
+	flag.StringVar(&startType, "t", "type", "Start type client/server/client-chat")
 	flag.Parse()
 
 	switch startType {
@@ -19,6 +19,8 @@ func main() {
 		ExampleClient.ExampleEverythingWithSTDIOClient()
 	case "server":
 		ExampleServer.ExampleEverythingWithSTDIOServer()
+	case "client-chat":
+		ExampleClient.ExampleWithSTDIOClientChat()
 	default:
 		log.Printf("Start type %s not found", startType)
 	}

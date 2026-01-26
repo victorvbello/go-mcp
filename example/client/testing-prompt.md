@@ -1,0 +1,4 @@
+- Please give me a wealth plan for a person who earns $3000 monthly
+- Do you have any resources?
+    - What about the seven-golden-rules resource?
+    - What is the URI for the seven-golden-rules resource?

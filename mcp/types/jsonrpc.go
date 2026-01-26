@@ -36,7 +36,7 @@ const (
 	JSONRPC_VERSION = "2.0"
 )
 
-//Refers to any valid JSON-RPC object that can be decoded off the wire, or encoded to be sent.
+// Refers to any valid JSON-RPC object that can be decoded off the wire, or encoded to be sent.
 type JSONRPCMessage interface {
 	JSONRPCMessageType() int
 }
@@ -207,6 +207,16 @@ func (jr *JSONRPCRequest) MarshalJSON() ([]byte, error) {
 		reqInB, err = json.Marshal(jr.RequestInterface.(*ListToolsRequest))
 		if err != nil {
 			return nil, fmt.Errorf("marshal METHOD_REQUEST_LIST_TOOLS fields: %w", err)
+		}
+	case SUBSCRIBE_REQUEST_REQUEST_INTERFACE_TYPE:
+		reqInB, err = json.Marshal(jr.RequestInterface.(*SubscribeRequest))
+		if err != nil {
+			return nil, fmt.Errorf("marshal SUBSCRIBE_REQUEST_REQUEST_INTERFACE_TYPE fields: %w", err)
+		}
+	case UNSUBSCRIBE_REQUEST_REQUEST_INTERFACE_TYPE:
+		reqInB, err = json.Marshal(jr.RequestInterface.(*UnsubscribeRequest))
+		if err != nil {
+			return nil, fmt.Errorf("marshal UNSUBSCRIBE_REQUEST_REQUEST_INTERFACE_TYPE fields: %w", err)
 		}
 	}
 	if err := json.Unmarshal(reqInB, &baseMap); err != nil {
@@ -586,14 +596,14 @@ func (je *JSONRPCError) JSONRPCGeneralResponseType() int {
 }
 func (je *JSONRPCError) GetRequestID() RequestID { return je.ID }
 
-//A JSON-RPC batch request, as described in https://www.jsonrpc.org/specification#batch.
+// A JSON-RPC batch request, as described in https://www.jsonrpc.org/specification#batch.
 type JSONRPCBatchRequest []JSONRPCBatchRequestInterface
 
 func (jbr *JSONRPCBatchRequest) JSONRPCMessageType() int {
 	return JSONRPC_MESSAGE_JSONRPC_BATCH_REQUEST_TYPE
 }
 
-//A JSON-RPC batch response, as described in https://www.jsonrpc.org/specification#batch.
+// A JSON-RPC batch response, as described in https://www.jsonrpc.org/specification#batch.
 type JSONRPCBatchResponse []JSONRPCBatchResponseInterface
 
 func (jbr *JSONRPCBatchResponse) JSONRPCMessageType() int {

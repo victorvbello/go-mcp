@@ -7,12 +7,12 @@ import (
 	"github.com/victorvbello/gomcp/mcp/methods"
 )
 
-//A request from the server to sample an LLM via the client. The client has full discretion over which model to select. The client should also inform the user before beginning sampling, to allow them to inspect the request (human in the loop) and decide whether to approve it.
+// A request from the server to sample an LLM via the client. The client has full discretion over which model to select. The client should also inform the user before beginning sampling, to allow them to inspect the request (human in the loop) and decide whether to approve it.
 //
-//Only method: METHOD_SAMPLING_CREATE_MESSAGE
+// Only method: METHOD_SAMPLING_CREATE_MESSAGE
 type CreateMessageRequest struct {
 	Request
-	CreateMessageParams `json:"params"`
+	Params CreateMessageParams `json:"params"`
 }
 
 func (cmr *CreateMessageRequest) TypeOfServerRequest() int {
@@ -29,7 +29,7 @@ func NewCreateMessageRequest(params *CreateMessageParams) *CreateMessageRequest 
 	cmr := new(CreateMessageRequest)
 	cmr.Method = methods.METHOD_SAMPLING_CREATE_MESSAGE
 	if params != nil {
-		cmr.CreateMessageParams = *params
+		cmr.Params = *params
 	}
 	return cmr
 }
@@ -69,7 +69,7 @@ type CreateMessageParams struct {
 	Metadata interface{} `json:"metadata,omitempty"`
 }
 
-//Describes a message issued to or received from an LLM API.
+// Describes a message issued to or received from an LLM API.
 type SamplingMessage struct {
 	Role Role `json:"role"`
 	//Could be TextContent/ImageContent/AudioContent
@@ -105,7 +105,6 @@ func (sm *SamplingMessage) UnmarshalJSON(data []byte) error {
 	if c == nil {
 		c = new(TextContent)
 	}
-
 	if err := json.Unmarshal(meta.Content, &c); err != nil {
 		return fmt.Errorf("error SamplingMessage unmarshaling err: %v", err)
 	}
@@ -113,17 +112,17 @@ func (sm *SamplingMessage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-//The server's preferences for model selection, requested of the client during sampling.
+// The server's preferences for model selection, requested of the client during sampling.
 //
-//Because LLMs can vary along multiple dimensions, choosing the "best" model is
-//rarely straightforward.  Different models excel in different areas—some are
-//faster but less capable, others are more capable but more expensive, and so
-//on. This interface allows servers to express their priorities across multiple
-//dimensions to help clients make an appropriate selection for their use case.
+// Because LLMs can vary along multiple dimensions, choosing the "best" model is
+// rarely straightforward.  Different models excel in different areas—some are
+// faster but less capable, others are more capable but more expensive, and so
+// on. This interface allows servers to express their priorities across multiple
+// dimensions to help clients make an appropriate selection for their use case.
 //
-//These preferences are always advisory. The client MAY ignore them. It is also
-//up to the client to decide how to interpret these preferences and how to
-//balance them against other considerations.
+// These preferences are always advisory. The client MAY ignore them. It is also
+// up to the client to decide how to interpret these preferences and how to
+// balance them against other considerations.
 type ModelPreferences struct {
 	//Optional hints to use for model selection.
 	//
@@ -147,10 +146,10 @@ type ModelPreferences struct {
 	IntelligencePriority float64 `json:"intelligencePriority,omitempty"`
 }
 
-//Hints to use for model selection.
+// Hints to use for model selection.
 //
-//Keys not declared here are currently left unspecified by the spec and are up
-//to the client to interpret.
+// Keys not declared here are currently left unspecified by the spec and are up
+// to the client to interpret.
 type ModelHint struct {
 	//A hint for a model name.
 	//

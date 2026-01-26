@@ -1,10 +1,11 @@
 package types
 
 const (
-	TEXT_CONTENT_TYPE              = "text"
-	IMAGE_CONTENT_TYPE             = "image"
-	AUDIO_CONTENT_TYPE             = "audio"
-	EMBEDDED_RESOURCE_CONTENT_TYPE = "resource"
+	TEXT_CONTENT_TYPE                   = "text"
+	IMAGE_CONTENT_TYPE                  = "image"
+	AUDIO_CONTENT_TYPE                  = "audio"
+	EMBEDDED_RESOURCE_CONTENT_TYPE      = "resource"
+	EMBEDDED_RESOURCE_LINK_CONTENT_TYPE = "resource_link"
 )
 
 type Content interface {
@@ -15,7 +16,7 @@ type BaseContent struct {
 	Type string `json:"type"`
 }
 
-//Text provided to or from an LLM.
+// Text provided to or from an LLM.
 type TextContent struct {
 	//type: "text"
 	BaseContent
@@ -32,7 +33,7 @@ func NewTextContent(txt string) *TextContent {
 	return ntxt
 }
 
-//An image provided to or from an LLM.
+// An image provided to or from an LLM.
 type ImageContent struct {
 	//type: "image"
 	BaseContent
@@ -52,7 +53,7 @@ func NewImageContent(Data, MIMEType string) *ImageContent {
 	return c
 }
 
-//Audio provided to or from an LLM.
+// Audio provided to or from an LLM.
 type AudioContent struct {
 	//type: "audio"
 	BaseContent
@@ -72,10 +73,10 @@ func NewAudioContent(Data, MIMEType string) *AudioContent {
 	return c
 }
 
-//The contents of a resource, embedded into a prompt or tool call result.
+// The contents of a resource, embedded into a prompt or tool call result.
 //
-//It is up to the client how best to render embedded resources for the benefit
-//of the LLM and/or the user.
+// It is up to the client how best to render embedded resources for the benefit
+// of the LLM and/or the user.
 type EmbeddedResource struct {
 	//type: "resource"
 	BaseContent
@@ -91,16 +92,16 @@ func NewEmbeddedResource(Resource ResourceContents) *EmbeddedResource {
 	return c
 }
 
-//A resource that the server is capable of reading, included in a prompt or tool call result.
+// A resource that the server is capable of reading, included in a prompt or tool call result.
 //
-//Note: resource links returned by tools are not guaranteed to appear in the results of `resources/list` requests.
+// Note: resource links returned by tools are not guaranteed to appear in the results of `resources/list` requests.
 type ResourceLink struct {
 	//type: "resource_link"
 	BaseContent
 	Resource
 }
 
-func (e *ResourceLink) TypeOfContent() string { return EMBEDDED_RESOURCE_CONTENT_TYPE }
+func (e *ResourceLink) TypeOfContent() string { return EMBEDDED_RESOURCE_LINK_CONTENT_TYPE }
 
 func NewResourceLink(Resource Resource) *ResourceLink {
 	c := new(ResourceLink)

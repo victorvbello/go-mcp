@@ -19,9 +19,9 @@ type ClientOptions struct {
 	Instructions string
 }
 
-//An MCP client on top of a pluggable transport.
+// An MCP client on top of a pluggable transport.
 //
-//The client will automatically begin the initialization flow with the server when connect() is called.
+// The client will automatically begin the initialization flow with the server when connect() is called.
 type Client struct {
 	*shared.Protocol
 	serverCapabilities         types.ServerCapabilities
@@ -48,26 +48,25 @@ func NewClient(clientInfo types.Implementation, opts ClientOptions) (*Client, er
 	return cli, nil
 }
 
-//ProtocolInterface Methods
+// ProtocolInterface Methods
 func (c *Client) ProtocolInterfaceType() int {
 	return shared.CLIENT_PROTOCOLO_INTERFACE_TYPE
 }
 
-//Callback for when the connection is closed for any reason.
+// Callback for when the connection is closed for any reason.
 //
-//This is invoked when close() is called as well.
+// This is invoked when close() is called as well.
 func (c *Client) OnClose() error {
 	return nil
 }
 
-//Callback for when an error occurs.
+// Callback for when an error occurs.
 //
-//Note that errors are not necessarily fatal; they are used for reporting any kind of exceptional condition out of band.
+// Note that errors are not necessarily fatal; they are used for reporting any kind of exceptional condition out of band.
 func (c *Client) OnError(err error) error {
 	if err != nil {
 		c.logger.Error(nil, err.Error())
 	}
-	fmt.Println("client-on-error")
 	c.onErrorCallBack(err)
 	go func() {
 		if c.wrapperOnErrorChan == nil {
@@ -78,24 +77,24 @@ func (c *Client) OnError(err error) error {
 	return nil
 }
 
-//Add external Action on error
+// Add external Action on error
 func (c *Client) SetOnErrorCallBack(fn func(err error)) {
 	c.onErrorCallBack = fn
 }
 
-//A handler to invoke for any request types that do not have their own handler installed.
+// A handler to invoke for any request types that do not have their own handler installed.
 func (c *Client) FallbackRequestHandler() shared.RequestHandler {
 	return nil
 }
 
-//A handler to invoke for any notification types that do not have their own handler installed.
+// A handler to invoke for any notification types that do not have their own handler installed.
 func (c *Client) FallbackNotificationHandler() shared.NotificationHandler {
 	return nil
 }
 
-//A method to check if a capability is supported by the remote side, for the given method to be called.
+// A method to check if a capability is supported by the remote side, for the given method to be called.
 //
-//This should be implemented by parent struct
+// This should be implemented by parent struct
 func (c *Client) AssertCapabilityForMethod(sReq types.RequestInterface) error {
 	switch r := sReq.(type) {
 	case *types.SetLevelRequest:
@@ -142,9 +141,9 @@ func (c *Client) AssertCapabilityForMethod(sReq types.RequestInterface) error {
 	return nil
 }
 
-//A method to check if a notification is supported by the local side, for the given method to be sent.
+// A method to check if a notification is supported by the local side, for the given method to be sent.
 //
-//This should be implemented by parent struct
+// This should be implemented by parent struct
 func (c *Client) AssertNotificationCapability(sNotify types.NotificationInterface) error {
 	switch n := sNotify.(type) {
 	case *types.RootsListChangedNotification:
@@ -165,9 +164,9 @@ func (c *Client) AssertNotificationCapability(sNotify types.NotificationInterfac
 	return nil
 }
 
-//A method to check if a request handler is supported by the local side, for the given method to be handled.
+// A method to check if a request handler is supported by the local side, for the given method to be handled.
 //
-//This should be implemented by parent struct
+// This should be implemented by parent struct
 func (s *Client) AssertRequestHandlerCapability(req types.RequestInterface) error {
 	switch r := req.(type) {
 	case *types.CreateMessageRequest:
@@ -190,9 +189,9 @@ func (s *Client) AssertRequestHandlerCapability(req types.RequestInterface) erro
 
 //Client Methods
 
-//Registers new capabilities. This can only be called before connecting to a transport.
+// Registers new capabilities. This can only be called before connecting to a transport.
 //
-//The new capabilities will be merged with any existing capabilities previously given (e.g., at initialization).
+// The new capabilities will be merged with any existing capabilities previously given (e.g., at initialization).
 func (c *Client) RegisterCapabilities(capabilities types.ClientCapabilities) error {
 	if c.GetTransport() != nil {
 		return fmt.Errorf("cannot register capabilities after connecting to transport")
@@ -244,17 +243,17 @@ func (c *Client) Close() error {
 	return closeError
 }
 
-//After initialization has completed, this will be populated with the server's reported capabilities.
+// After initialization has completed, this will be populated with the server's reported capabilities.
 func (c *Client) GetServerCapabilities() types.ServerCapabilities {
 	return c.serverCapabilities
 }
 
-//After initialization has completed, this will be populated with information about the server's name and version.
+// After initialization has completed, this will be populated with information about the server's name and version.
 func (c *Client) GetServerVersion() types.Implementation {
 	return c.serverVersion
 }
 
-//After initialization has completed, this may be populated with information about the server's instructions.
+// After initialization has completed, this may be populated with information about the server's instructions.
 func (c *Client) GetInstructions() string {
 	return c.instructions
 }
@@ -436,9 +435,7 @@ func (c *Client) cacheToolOutputSchemas(tools []types.Tool) {
 func (c *Client) wrapperOnError(fn func()) error {
 	c.wrapperOnErrorChan = make(chan error)
 	fn()
-	fmt.Println("wrapperOnErrorServer -1 ")
 	sError := <-c.wrapperOnErrorChan
-	fmt.Println("wrapperOnErrorServer -2 ")
 	c.wrapperOnErrorChan = nil
 	return sError
 }

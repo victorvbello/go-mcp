@@ -43,9 +43,11 @@ const (
 	READ_RESOURCE_REQUEST_REQUEST_INTERFACE_TYPE
 	CALL_TOOL_REQUEST_REQUEST_INTERFACE_TYPE
 	LIST_TOOLS_REQUEST_REQUEST_INTERFACE_TYPE
+	SUBSCRIBE_REQUEST_REQUEST_INTERFACE_TYPE
+	UNSUBSCRIBE_REQUEST_REQUEST_INTERFACE_TYPE
 )
 
-//A uniquely identifying ID for a request in JSON-RPC, number.
+// A uniquely identifying ID for a request in JSON-RPC, number.
 type RequestID int
 
 type Request struct {
@@ -77,9 +79,9 @@ type BaseRequestParams struct {
 	Meta `json:"_meta,omitempty"`
 }
 
-//This request is sent from the client to the server when it first connects, asking it to begin initialization.
+// This request is sent from the client to the server when it first connects, asking it to begin initialization.
 //
-//Only method: METHOD_REQUEST_INITIALIZE
+// Only method: METHOD_REQUEST_INITIALIZE
 type InitializeRequest struct {
 	Request
 	Params InitializeRequestParams `json:"params"`
@@ -109,7 +111,7 @@ type InitializeRequestParams struct {
 	ClientInfo      Implementation     `json:"clientInfo"`
 }
 
-//Capabilities a client may support. Known capabilities are defined here, in this schema, but this is not a closed set: any client can define its own, additional capabilities.
+// Capabilities a client may support. Known capabilities are defined here, in this schema, but this is not a closed set: any client can define its own, additional capabilities.
 type ClientCapabilities struct {
 	//Experimental, non-standard capabilities that the client supports.
 	Experimental map[string]interface{} `json:"experimental,omitempty"`
@@ -145,9 +147,9 @@ func (cc *ClientCapabilities) UpdateAll(new *ClientCapabilities) {
 	}
 }
 
-//A ping, issued by either the server or the client, to check that the other party is still alive. The receiver must promptly respond, or else may be disconnected.
+// A ping, issued by either the server or the client, to check that the other party is still alive. The receiver must promptly respond, or else may be disconnected.
 //
-//Only method: METHOD_REQUEST_PING
+// Only method: METHOD_REQUEST_PING
 type PingRequest struct {
 	Request
 }
@@ -176,15 +178,18 @@ type PaginatedRequestParams struct {
 	Cursor Cursor `json:"cursor,omitempty"`
 }
 
-//Sent from the client to request resources/updated notifications from the server whenever a particular resource changes.
+// Sent from the client to request resources/updated notifications from the server whenever a particular resource changes.
 //
-//Only method: METHOD_REQUEST_SUBSCRIBE_RESOURCES
+// Only method: METHOD_REQUEST_SUBSCRIBE_RESOURCES
 type SubscribeRequest struct {
 	Request
 	Params *SubscribeRequestParams `json:"params"`
 }
 
 func (sr *SubscribeRequest) TypeOfClientRequest() int { return SUBSCRIBE_REQUEST_CLIENT_REQUEST_TYPE }
+func (sr *SubscribeRequest) TypeOfRequestInterface() int {
+	return SUBSCRIBE_REQUEST_REQUEST_INTERFACE_TYPE
+}
 
 func NewSubscribeRequest(params *SubscribeRequestParams) *SubscribeRequest {
 	sr := new(SubscribeRequest)
@@ -199,9 +204,9 @@ type SubscribeRequestParams struct {
 	URI string `json:"uri"`
 }
 
-//Sent from the client to request cancellation of resources/updated notifications from the server. This should follow a previous resources/subscribe request.
+// Sent from the client to request cancellation of resources/updated notifications from the server. This should follow a previous resources/subscribe request.
 //
-//Only method: METHOD_REQUEST_UNSUBSCRIBE_RESOURCES
+// Only method: METHOD_REQUEST_UNSUBSCRIBE_RESOURCES
 type UnsubscribeRequest struct {
 	Request
 	Params *UnsubscribeRequestParams `json:"params"`
@@ -210,6 +215,10 @@ type UnsubscribeRequest struct {
 func (ur *UnsubscribeRequest) TypeOfClientRequest() int {
 	return UNSUBSCRIBE_REQUEST_CLIENT_REQUEST_TYPE
 }
+func (ur *UnsubscribeRequest) TypeOfRequestInterface() int {
+	return UNSUBSCRIBE_REQUEST_REQUEST_INTERFACE_TYPE
+}
+
 func NewUnsubscribeRequest(params *UnsubscribeRequestParams) *UnsubscribeRequest {
 	ur := new(UnsubscribeRequest)
 	ur.Method = methods.METHOD_REQUEST_UNSUBSCRIBE_RESOURCES
@@ -228,12 +237,12 @@ type RequestInterface interface {
 	GetRequest() Request
 }
 
-//ClientRequest
+// ClientRequest
 type ClientRequest interface {
 	TypeOfClientRequest() int
 }
 
-//Server messages
+// Server messages
 type ServerRequest interface {
 	TypeOfServerRequest() int
 }

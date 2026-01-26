@@ -36,7 +36,7 @@ type StdioServerParameters struct {
 	CWD string
 }
 
-//Returns a default environment object including only environment variables deemed safe to inherit.
+// Returns a default environment object including only environment variables deemed safe to inherit.
 func GetDefaultEnvironment() map[string]string {
 	env := make(map[string]string)
 
@@ -50,9 +50,9 @@ func GetDefaultEnvironment() map[string]string {
 	return env
 }
 
-//Client transport for stdio: this will connect to a server by spawning a process and communicating with it over stdin/stdout.
+// Client transport for stdio: this will connect to a server by spawning a process and communicating with it over stdin/stdout.
 //
-//This transport is only available in Node.js environments.
+// This transport is only available in Node.js environments.
 type StdioClientTransport struct {
 	mu                  sync.RWMutex
 	serverSTDin         *bufio.Writer
@@ -70,9 +70,10 @@ type StdioClientTransport struct {
 	serverParams        StdioServerParameters
 	started             bool
 	logger              utils.LogService
+	showServerInfoLog   bool
 }
 
-func NewStdioClientTransport(sp StdioServerParameters) shared.Transport {
+func NewStdioClientTransport(sp StdioServerParameters, showServerInfoLog bool) shared.Transport {
 	nct := &StdioClientTransport{
 		serverParams: sp,
 		logger:       utils.NewLoggerService("new-stdio-client-transport"),
@@ -111,7 +112,7 @@ func (st *StdioClientTransport) processReadBufferNotifcation() {
 			st.OnMessage(message, nil)
 			break
 		}
-		if !st.logger.LogMsgIsLevel(messageStr, utils.LOG_LEVEL_ERROR) {
+		if !st.logger.LogMsgIsLevel(messageStr, utils.LOG_LEVEL_ERROR) && st.showServerInfoLog {
 			st.logger.Info(nil, messageStr)
 			break
 		}
@@ -133,7 +134,7 @@ func (st *StdioClientTransport) onError(err error) {
 	st.OnError(err)
 }
 
-//Starts the server process and prepares to communicate with it.
+// Starts the server process and prepares to communicate with it.
 func (st *StdioClientTransport) Start(ctx context.Context) error {
 	if st.started {
 		return fmt.Errorf("stdioClientTransport already started! If using Client class, note that connect() calls start() automatically")
@@ -250,9 +251,9 @@ func (st *StdioClientTransport) handlerSTDIOReader(readerType string, reader *bu
 	}
 }
 
-//Sends a JSON-RPC message (request or response).
+// Sends a JSON-RPC message (request or response).
 //
-//If present, `relatedRequestId` is used to indicate to the transport which incoming request to associate this outgoing message with.
+// If present, `relatedRequestId` is used to indicate to the transport which incoming request to associate this outgoing message with.
 func (st *StdioClientTransport) Send(request types.JSONRPCMessage, options *shared.TransportSendOptions) (*types.JSONRPCResponse, error) {
 	if st.serverSTDin == nil {
 		return nil, fmt.Errorf("server not connected")
@@ -274,7 +275,7 @@ func (st *StdioClientTransport) Send(request types.JSONRPCMessage, options *shar
 	return nil, nil
 }
 
-//Closes the connection.
+// Closes the connection.
 func (st *StdioClientTransport) Close() error {
 	st.serverSTDin = nil
 	st.serverSTDout = nil
@@ -295,62 +296,61 @@ func (st *StdioClientTransport) Close() error {
 	return nil
 }
 
-//Callback for when the connection is closed for any reason.
+// Callback for when the connection is closed for any reason.
 //
-//This should be invoked when close() is called as well.
+// This should be invoked when close() is called as well.
 //
-//Always execute first the prop globalOnClose if is defined
+// Always execute first the prop globalOnClose if is defined
 func (st *StdioClientTransport) OnClose() error {
-	fmt.Println("----closed---")
 	if st.globalOnClose != nil {
 		st.globalOnClose()
 	}
 	return nil
 }
 
-//Callback for when an error occurs.
+// Callback for when an error occurs.
 //
-//Note that errors are not necessarily fatal; they are used for reporting any kind of exceptional condition out of band.
+// Note that errors are not necessarily fatal; they are used for reporting any kind of exceptional condition out of band.
 //
-//Always execute first the prop globalOnError if is defined
+// Always execute first the prop globalOnError if is defined
 func (st *StdioClientTransport) OnError(err error) {
 	if st.globalOnError != nil {
 		st.globalOnError(err)
 	}
 }
 
-//Callback for when a message (request or response) is received over the connection.
+// Callback for when a message (request or response) is received over the connection.
 //
-//Includes the authInfo if the transport is authenticated.
+// Includes the authInfo if the transport is authenticated.
 //
-//Always execute first the prop globalOnMessage if is defined
+// Always execute first the prop globalOnMessage if is defined
 func (st *StdioClientTransport) OnMessage(message types.JSONRPCMessage, extra *shared.MessageExtraInfo) {
 	if st.globalOnMessage != nil {
 		st.globalOnMessage(message, extra)
 	}
 }
 
-//Sets the protocol version used for the connection (called when the initialize response is received).
+// Sets the protocol version used for the connection (called when the initialize response is received).
 func (st *StdioClientTransport) SetProtocolVersion(version string) {
 	st.protocolVersion = version
 }
 
-//Return the session ID
+// Return the session ID
 func (st *StdioClientTransport) GetSessionID() string {
 	return "mcp-session-id-stdio"
 }
 
-//Set this if globalOnClose is needed, this must be executed into OnClose Func first
+// Set this if globalOnClose is needed, this must be executed into OnClose Func first
 func (st *StdioClientTransport) SetGlobalOnClose(fn func()) {
 	st.globalOnClose = fn
 }
 
-//Set this if globalOnError is needed, this must be executed into OnError Func first
+// Set this if globalOnError is needed, this must be executed into OnError Func first
 func (st *StdioClientTransport) SetGlobalOnError(fn func(err error)) {
 	st.globalOnError = fn
 }
 
-//Set this if globalOnMessage is needed, this must be executed into OnMessage Func first
+// Set this if globalOnMessage is needed, this must be executed into OnMessage Func first
 func (st *StdioClientTransport) SetGlobalOnMessage(fn func(message types.JSONRPCMessage, extra *shared.MessageExtraInfo)) {
 	st.globalOnMessage = fn
 }

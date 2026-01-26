@@ -16,7 +16,7 @@ type ReadBuffer struct {
 	buffer bytes.Buffer
 }
 
-//Append adds new data to the buffer.
+// Append adds new data to the buffer.
 func (rb *ReadBuffer) Append(chunk []byte) (int, error) {
 	b, err := rb.buffer.Write(chunk)
 	if err != nil {
@@ -43,6 +43,10 @@ func (rb *ReadBuffer) ReadStringData() (string, error) {
 
 func (rb *ReadBuffer) StringDataToMessage(line string) (types.JSONRPCMessage, error) {
 	var msg types.RawMessage
+	fmt.Printf("Deserializing line: %s\n", line)
+	if !json.Valid([]byte(line)) {
+		return nil, nil
+	}
 	if err := json.Unmarshal([]byte(line), &msg); err != nil {
 		return nil, fmt.Errorf("json.Unmarshal line:%s, err:%v", line, err)
 	}
@@ -53,7 +57,7 @@ func (rb *ReadBuffer) StringDataToMessage(line string) (types.JSONRPCMessage, er
 	return finalMsg, nil
 }
 
-//ReadMessage reads the next JSON-RPC message from the buffer if a full line is available.
+// ReadMessage reads the next JSON-RPC message from the buffer if a full line is available.
 func (rb *ReadBuffer) ReadMessage() (types.JSONRPCMessage, error) {
 	line, err := rb.ReadStringData()
 	if err != nil {
@@ -72,7 +76,7 @@ func (rb *ReadBuffer) ReadMessage() (types.JSONRPCMessage, error) {
 	return finalMsg, nil
 }
 
-//Clear resets the internal buffer.
+// Clear resets the internal buffer.
 func (rb *ReadBuffer) Clear() {
 	rb.buffer.Reset()
 }

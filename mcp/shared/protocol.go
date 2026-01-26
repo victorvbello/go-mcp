@@ -73,12 +73,12 @@ func NewProtocol(opts *ProtocolOptions, pi ProtocolInterface) *Protocol {
 	return newProtocol
 }
 
-//Add timeout to timeoutInfo list by msg id
+// Add timeout to timeoutInfo list by msg id
 func (p *Protocol) setupTimeout(messageID int, timeout *timeoutConfig) {
 	p.timeoutInfo.Set(messageID, timeout)
 }
 
-//Reset the timeout by validating the MaxTotalTimeout
+// Reset the timeout by validating the MaxTotalTimeout
 func (p *Protocol) resetTimeout(messageID int) (bool, types.ErrorInterface) {
 	timeout, ok := p.timeoutInfo.Get(messageID)
 	if !ok {
@@ -107,9 +107,9 @@ func (p *Protocol) cleanupTimeout(messageID int) {
 	p.timeoutInfo.Delete(messageID)
 }
 
-//Attaches to the given transport, starts it, and starts listening for messages.
+// Attaches to the given transport, starts it, and starts listening for messages.
 //
-//The Protocol object assumes ownership of the Transport, replacing any callbacks that have already been set, and expects that it is the only user of the Transport instance going forward.
+// The Protocol object assumes ownership of the Transport, replacing any callbacks that have already been set, and expects that it is the only user of the Transport instance going forward.
 func (p *Protocol) Connect(ctx context.Context, transport Transport) {
 	p.transport = transport
 	p.transport.SetGlobalOnClose(func() {
@@ -326,7 +326,6 @@ func (p *Protocol) GetTransport() Transport {
 }
 
 func (p *Protocol) Close() {
-	fmt.Println("--protocol close--")
 	err := p.transport.Close()
 	if err != nil {
 		p.onError(fmt.Errorf("transport.Close %v", err))
@@ -335,9 +334,9 @@ func (p *Protocol) Close() {
 	p.onError(nil)
 }
 
-//Sends a request and wait for a response.
+// Sends a request and wait for a response.
 //
-//Do not use this method to emit notifications! Use notification() instead.
+// Do not use this method to emit notifications! Use notification() instead.
 func (p *Protocol) Request(request types.RequestInterface, opts *RequestOptions) (gResp types.ResultInterface, gErr error) {
 	safeOpts := opts
 	if safeOpts == nil {
@@ -491,7 +490,7 @@ func (p *Protocol) Request(request types.RequestInterface, opts *RequestOptions)
 	return
 }
 
-//Emits a notification, which is a one-way message that does not expect a response.
+// Emits a notification, which is a one-way message that does not expect a response.
 func (p *Protocol) Notification(notification types.NotificationInterface, opts *NotificationOptions) error {
 	safeOpts := opts
 	if safeOpts == nil {
@@ -516,9 +515,9 @@ func (p *Protocol) Notification(notification types.NotificationInterface, opts *
 	return nil
 }
 
-//Registers a handler to invoke when this protocol object receives a request with the given method.
+// Registers a handler to invoke when this protocol object receives a request with the given method.
 //
-//Note that this will replace any previous request handler for the same method.
+// Note that this will replace any previous request handler for the same method.
 func (p *Protocol) SetRequestHandler(request types.RequestInterface, handler RequestHandler) {
 	method := request.GetRequest().Method
 	err := p.owner.AssertRequestHandlerCapability(request)
@@ -534,12 +533,12 @@ func (p *Protocol) SetRequestHandler(request types.RequestInterface, handler Req
 	p.requestHandlers.Set(method, handler)
 }
 
-//Removes the request handler for the given method.
+// Removes the request handler for the given method.
 func (p *Protocol) RemoveRequestHandler(method string) {
 	p.requestHandlers.Delete(method)
 }
 
-//Asserts that a request handler has not already been set for the given method, in preparation for a new one being automatically installed.
+// Asserts that a request handler has not already been set for the given method, in preparation for a new one being automatically installed.
 func (p *Protocol) AssertCanSetRequestHandler(method string) error {
 	_, ok := p.requestHandlers.Get(method)
 	if ok {
@@ -548,14 +547,14 @@ func (p *Protocol) AssertCanSetRequestHandler(method string) error {
 	return nil
 }
 
-//Registers a handler to invoke when this protocol object receives a notification with the given method.
+// Registers a handler to invoke when this protocol object receives a notification with the given method.
 //
-//Note that this will replace any previous notification handler for the same method.
+// Note that this will replace any previous notification handler for the same method.
 func (p *Protocol) SetNotificationHandler(notification types.NotificationInterface, handler NotificationHandler) {
 	p.notificationHandlers.Set(notification.GetNotification().Method, handler)
 }
 
-//Removes the notification handler for the given method.
+// Removes the notification handler for the given method.
 func (p *Protocol) RemoveNotificationHandler(method string) {
 	p.notificationHandlers.Delete(method)
 }

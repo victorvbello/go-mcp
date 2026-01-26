@@ -8,6 +8,7 @@ import (
 	"os"
 	"runtime/debug"
 	"strconv"
+	"time"
 
 	MCPServer "github.com/victorvbello/gomcp/mcp/server"
 	"github.com/victorvbello/gomcp/mcp/shared"
@@ -73,7 +74,6 @@ func ExampleEverythingWithSTDIOServer() {
 			debug.PrintStack()
 		}
 	})
-
 	_, err = mpcServer.RegisterPrompt(MCPServer.RegisterPromptOpts{
 		Name:        "describe-json-and-transform-to-table",
 		Title:       "Generate a description and a table using JSON data",
@@ -255,9 +255,9 @@ func ExampleEverythingWithSTDIOServer() {
 	if err != nil {
 		logger.Fatal(nil, fmt.Sprintf("mpcServer.RegisterResourceTemplate user-profile %v", err))
 	}
-
+	//RegisterTool generate-wealthy-plan
 	_, err = mpcServer.RegisterTool(MCPServer.RegisterToolOpts{
-		Name:        "generate_wealthy_plan",
+		Name:        "generate-wealthy-plan",
 		Description: "Generate a wealthy plan using the user salary",
 		InputSchema: types.ToolInputSchema{
 			Type: "object",
@@ -292,7 +292,7 @@ func ExampleEverythingWithSTDIOServer() {
 					{
 						Role: "user",
 						Content: types.NewTextContent(
-							fmt.Sprintf("Please generate a wealthy plan for a person that has a salary of %s, and his payment frequency are %s. For this you should use the resource %s", salary, frequency, "seven-golden-rules.txt"),
+							fmt.Sprintf("Please generate a wealthy plan for a person that has a salary of %s, and his payment frequency are %s. For this you should use the resource %s", salary, frequency, "file://seven-golden-rules.txt"),
 						),
 					},
 				},
@@ -305,13 +305,18 @@ func ExampleEverythingWithSTDIOServer() {
 			resultText := "Unable to generate wealthy plan"
 			safeTypeResponse, okType := response.(*types.CreateMessageResult)
 			logger.Info(utilsLogger.LogFields{
+				"tool":                     "generate-wealthy-plan",
 				"is_create_message_result": okType,
-			}, "Callback response")
+			}, "Create message response")
 			if okType && safeTypeResponse != nil && safeTypeResponse.Content != nil {
 				if safeContentText, okType := safeTypeResponse.Content.(*types.TextContent); okType && safeContentText != nil {
 					resultText = safeContentText.Text
 				}
 			}
+			logger.Info(utilsLogger.LogFields{
+				"tool":        "generate-wealthy-plan",
+				"result_text": resultText,
+			}, "Callback result")
 
 			result := &types.CallToolResult{
 				Content: []types.Content{
@@ -333,7 +338,7 @@ func ExampleEverythingWithSTDIOServer() {
 	if err != nil {
 		logger.Fatal(nil, fmt.Sprintf("mpcServer.RegisterTool summarize %v", err))
 	}
-
+	//RegisterTool summarize
 	_, err = mpcServer.RegisterTool(MCPServer.RegisterToolOpts{
 		Name:        "summarize",
 		Description: "Summarize any text using an LLM",
@@ -378,7 +383,8 @@ func ExampleEverythingWithSTDIOServer() {
 			safeTypeResponse, okType := response.(*types.CreateMessageResult)
 			logger.Info(utilsLogger.LogFields{
 				"is_create_message_result": okType,
-			}, "Callback response")
+				"response_is_nil":          safeTypeResponse == nil,
+			}, "Create message response")
 			if okType && safeTypeResponse != nil && safeTypeResponse.Content != nil {
 				if safeContentText, okType := safeTypeResponse.Content.(*types.TextContent); okType && safeContentText != nil {
 					resultText = safeContentText.Text
@@ -390,13 +396,16 @@ func ExampleEverythingWithSTDIOServer() {
 					types.NewTextContent(resultText),
 				},
 			}
+			logger.Info(utilsLogger.LogFields{
+				"result_text": resultText,
+			}, "Callback result")
 			return result, nil
 		},
 	})
 	if err != nil {
 		logger.Fatal(nil, fmt.Sprintf("mpcServer.RegisterTool summarize %v", err))
 	}
-
+	// RegisterTool sum
 	_, err = mpcServer.RegisterTool(MCPServer.RegisterToolOpts{
 		Name:        "sum",
 		Description: "Sum two numbers",
@@ -413,23 +422,6 @@ func ExampleEverythingWithSTDIOServer() {
 				},
 			},
 			Required: []string{"a", "b"},
-		},
-		OutputSchema: &types.ToolOutputSchema{
-			Type: "object",
-			Properties: map[string]types.ToolOutputSchemaProperties{
-				"a": types.ToolOutputSchemaProperties{
-					Type:        "number",
-					Description: "First number",
-				},
-				"b": types.ToolOutputSchemaProperties{
-					Type:        "number",
-					Description: "Second number",
-				},
-				"result": types.ToolOutputSchemaProperties{
-					Type:        "number",
-					Description: "Sum result a + b",
-				},
-			},
 		},
 		Callback: func(args map[string]interface{}, extra *shared.RequestHandlerExtra) (*types.CallToolResult, error) {
 			a, ok := args["a"]
@@ -478,7 +470,7 @@ func ExampleEverythingWithSTDIOServer() {
 	if err != nil {
 		logger.Fatal(nil, fmt.Sprintf("mpcServer.RegisterTool sum%v", err))
 	}
-
+	// RegisterTool check-new-resources
 	_, err = mpcServer.RegisterTool(MCPServer.RegisterToolOpts{
 		Name:        "check-new-resources",
 		Description: "Update resource list",
@@ -523,6 +515,39 @@ func ExampleEverythingWithSTDIOServer() {
 	if err != nil {
 		logger.Fatal(nil, fmt.Sprintf("mpcServer.RegisterTool sum%v", err))
 	}
+	// RegisterTool check-the-weather-today
+	_, err = mpcServer.RegisterTool(MCPServer.RegisterToolOpts{
+		Name:        "check-the-weather-today",
+		Description: "Tell me the weather today",
+		InputSchema: types.ToolInputSchema{
+			Type: "object",
+			Properties: map[string]types.ToolInputSchemaProperties{
+				"city": types.ToolInputSchemaProperties{
+					Type:        "string",
+					Description: "City name",
+				},
+			},
+			Required: []string{"city"},
+		},
+		Callback: func(args map[string]interface{}, extra *shared.RequestHandlerExtra) (*types.CallToolResult, error) {
+			result := &types.CallToolResult{
+				Content: []types.Content{
+					types.NewTextContent(string("The weather today for the city " + args["city"].(string) + " is sunny with a high of 25°C and a low of 15°C.")),
+				},
+			}
+			return result, nil
+		},
+	})
+	if err != nil {
+		logger.Fatal(nil, fmt.Sprintf("mpcServer.RegisterTool check-the-weather-today%v", err))
+	}
+
+	//Send resource updated event for terms-and-conditions.txt
+	go func() {
+		time.Sleep(4 * time.Second)
+		mpcServer.SendResourceUpdated(types.ResourceUpdatedNotificationParams{URI: "file://terms-and-conditions.txt"})
+		logger.Info(nil, "Resource updated event form terms-and-conditions.txt send")
+	}()
 
 	transport := MCPServer.NewStdioServerTransport(os.Stdin, os.Stdout, os.Stderr)
 	logger.Info(nil, "MCP server is running...")
